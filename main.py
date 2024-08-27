@@ -1,20 +1,24 @@
-from bot.Logger import setup_logger
-logger = setup_logger()
-
-from okx.exceptions import OkxAPIException
+from pybit import exceptions
 from bot import Bot
 
+from bot.Logger import setup_logger
+
+
 from dotenv import load_dotenv
-# load_dotenv() # чтобы использовать .env рядом с main.py
-load_dotenv('hidden/.env_demo', override=True) # а эту строку удали
+
+logger = setup_logger()
+
+load_dotenv()
+
 
 if __name__ == '__main__':
     try:
         Bot().run()
     except KeyboardInterrupt as e:
         logger.debug("Бот остановлен вручную!")
-    except OkxAPIException as e:
+    except exceptions.InvalidRequestError as e:
+        logger.debug(str(e))
+    except exceptions.FailedRequestError as e:
         logger.debug(str(e))
     except Exception as e:
         logger.error(str(e))
-        print("hi")
