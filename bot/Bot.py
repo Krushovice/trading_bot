@@ -1,64 +1,64 @@
-import logging
 import os
+import ta
+import numpy as np
+import pandas as pd
 from time import sleep
-import ta.trend
+from Bybit import Bybit
+import logging
 
-from bot.Okx import Okx
+logger = logging.getLogger(__name__)
 
-logger = logging.getLogger('azzraelcode-yt')
 
-class Bot(Okx):
+class Bot(Bybit):
     """
-    Класс Bot реализует логику торговли,
-
-    а методы взаимодествия с биржей OKX наследуются из класса OKX (декомпозиция)
-    при желании можно наследоваться от класса где будет реализовано взаимодействие
-    или с др биржей, или с др секцией биржи (фиючерсы)
-
+    Класс Bot реализует логику торговли, наследуя методы взаимодействия с биржей OKX.
     """
 
     def __init__(self):
         super(Bot, self).__init__()
 
-        # загрузка значения из переменных окружения,
-        # чтобы при изменении окружения после запуска бота, бот продолжал нормально работать
         self.timeout = int(os.getenv('TIMEOUT', 60))
         self.timeframe = os.getenv('TIMEFRAME', '1m')
-        self.sma_fast = int(os.getenv('SMA_FAST', '14'))
-        self.sma_slow = int(os.getenv('SMA_SLOW', '28'))
+        self.ema_length = int(os.getenv('EMA_LENGTH', '200'))
+        self.factor = float(os.getenv('FACTOR', '1.7'))
+        self.model = os.getenv('MODEL', 'Buy on enter to OverSell')
+        self.dno = self.model == "Buy on enter to OverSell"
+
+    def get_v(self):
+        """
+        Рассчитывает разницу между закрытием и EMA, а также стандартное отклонение для этой разницы.
+        """
+        close = self.close_prices(self.symbol, self.timeframe)
+        ema = ta.trend.ema_indicator(close, self.ema_length).values
+        v = close - ema
+        dev = ta.volatility.bollinger_hband(close, self.ema_length, ndev=1) - ema  # Используем стандартное отклонение
+        return v, dev
 
     def is_cross(self):
         """
-        Определяю пересечение простых скользящих средних
+        Определяет, произошло ли пересечение зоны перекупленности/перепроданности.
         Возвращает:
          0 - если на текущем баре пересечения нет
-         1 - быстрая пересекает медленную снизу вверх, crossover, сигнал на покупку
-        -1 - быстрая пересекает медленную снизу вверх, crossover, сигнал на продажу
-        :return:
+         1 - сигнал на покупку
+        -1 - сигнал на продажу
         """
-        # Серия Пандас с ценами закрытия, в обратном (для ОКХ) порядке
-        close = self.close_prices(self.symbol, self.timeframe)
-
-        # Расчет простых скользящих средних,
-        # более свежие значение в конце списка
-        # нам нужны 2 последних значения
-        fast = ta.trend.sma_indicator(close, self.sma_fast).values
-        slow = ta.trend.sma_indicator(close, self.sma_slow).values
+        v, dev = self.get_v()
+        k = -1 if self.dno else 1
+        dev_limit = k * dev[-1] * self.factor
 
         r = 0
-        if   fast[-1] > slow[-1] and fast[-2] < slow[-2]: r = 1 # crossover быстрая снизу вверх
-        elif fast[-1] < slow[-1] and fast[-2] > slow[-2]: r =-1 # crossunder быстрая свверху вниз
+        if self.dno and v[-2] < dev_limit and v[-1] > dev_limit:
+            r = 1
+        elif not self.dno and v[-2] > dev_limit and v[-1] < dev_limit:
+            r = -1
 
-        if r != 0: logger.info(f"{r} = now {fast[-1]:.6f} / {slow[-1]:.6f}, prev {fast[-2]:.6f} / {slow[-2]:.6f}")
+        if r != 0:
+            logger.info(f"Signal: {r}, v: {v[-1]:.6f}, dev_limit: {dev_limit:.6f}")
         return r
 
     def check(self):
         """
-        Проверка сигналов и постановка ордеров
-
-        !! ВАЖНО !!
-
-        :return:
+        Проверка сигналов и постановка ордеров.
         """
         try:
             cross = self.is_cross()
@@ -74,8 +74,6 @@ class Bot(Okx):
     def loop(self):
         """
         Цикл проверки.
-        Лучше таки это делать опрос не в цикле, а использовать Websocket
-        :return:
         """
         while True:
             self.check()
@@ -83,14 +81,14 @@ class Bot(Okx):
 
     def run(self):
         """
-        Инициализация бота
-        :return:
+        Инициализация бота.
         """
         logger.info("The Bot is started!")
         self.check_permissions()
-
-        # Можно запускать вечный цикл, если бот локально
         self.loop()
-        # Или дергать по крону на ВДСке, по триггеру в Cloud Functions ...
-        # self.check()
 
+
+# Для использования класса
+if __name__ == "__main__":
+    bot = Bot()
+    bot.run()
