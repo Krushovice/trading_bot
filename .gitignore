@@ -1,10 +1,9 @@
 .gitignore
-../.env
+.env
 .idea
-.gitignore
-!/.gitignore
 *.log
 __pycache__
 *.sqlite3
 *.data
 /hidden
+/.venv
