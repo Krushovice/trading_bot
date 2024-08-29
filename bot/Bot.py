@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 from time import sleep
 from Bybit import Bybit
-import logging
+from Logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class Bot(Bybit):
@@ -17,11 +17,11 @@ class Bot(Bybit):
     def __init__(self):
         super(Bot, self).__init__()
 
-        self.timeout = int(os.getenv('TIMEOUT', 60))
-        self.timeframe = os.getenv('TIMEFRAME', '1m')
-        self.ema_length = int(os.getenv('EMA_LENGTH', '200'))
-        self.factor = float(os.getenv('FACTOR', '1.7'))
-        self.model = os.getenv('MODEL', 'Buy on enter to OverSell')
+        self.timeout = int(os.getenv("TIMEOUT", 60))
+        self.timeframe = os.getenv("TIMEFRAME", "1m")
+        self.ema_length = int(os.getenv("EMA_LENGTH", "200"))
+        self.factor = float(os.getenv("FACTOR", "1.7"))
+        self.model = os.getenv("MODEL", "Buy on enter to OverSell")
         self.dno = self.model == "Buy on enter to OverSell"
 
     def get_v(self):
@@ -31,7 +31,9 @@ class Bot(Bybit):
         close = self.close_prices(self.symbol, self.timeframe)
         ema = ta.trend.ema_indicator(close, self.ema_length).values
         v = close - ema
-        dev = ta.volatility.bollinger_hband(close, self.ema_length, ndev=1) - ema  # Используем стандартное отклонение
+        dev = (
+            ta.volatility.bollinger_hband(close, self.ema_length, ndev=1) - ema
+        )  # Используем стандартное отклонение
         return v, dev
 
     def is_cross(self):
@@ -64,9 +66,9 @@ class Bot(Bybit):
             cross = self.is_cross()
 
             if cross > 0 and not self.is_position():
-                self.place_order('buy')
+                self.place_order("buy")
             elif cross < 0 and self.is_position():
-                self.place_order('sell')
+                self.place_order("sell")
 
         except Exception as e:
             logger.error(str(e))

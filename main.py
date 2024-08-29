@@ -6,12 +6,12 @@ from bot.Logger import setup_logger
 
 from dotenv import load_dotenv
 
-logger = setup_logger()
+logger = setup_logger(__name__)
 
 load_dotenv()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         Bot().run()
     except KeyboardInterrupt as e:

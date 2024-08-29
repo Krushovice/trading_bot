@@ -6,7 +6,9 @@ import pandas as pd
 from pybit.unified_trading import HTTP, AccountHTTP, MarketHTTP, TradeHTTP
 from pybit import exceptions
 
-logger = logging.getLogger("krushovice_trade")
+from Logger import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class Bybit:
