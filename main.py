@@ -1,7 +1,5 @@
 from pybit import exceptions
-from bot import Bot
-
-from bot.Logger import setup_logger
+from bot import Bot, setup_logger
 
 
 from dotenv import load_dotenv
