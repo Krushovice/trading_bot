@@ -247,6 +247,49 @@ class Bybit:
         except Exception as e:
             logger.error(f"Exception occurred while setting trailing stop loss: {e}")
 
+    def get_historical_data(self, symbol, interval="5", limit=200):
+        """
+        Получает исторические данные для символа из API биржи.
+
+        :param symbol: Символ для получения данных (например, "BTCUSD").
+        :param interval: Интервал времени для данных (например, '5' для 5 минут).
+        :param limit: Количество данных для получения.
+        :return: DataFrame с историческими данными.
+        """
+        try:
+            close_prices = self.close_prices(symbol, interval, limit)
+            if close_prices.empty:
+                logger.error(f"No historical data returned for {symbol}.")
+                return None
+
+            df = pd.DataFrame({"close": close_prices})
+            return df
+
+        except Exception as e:
+            logger.error(f"Exception occurred while fetching historical data: {e}")
+            return None
+
+    def get_latest_data(self, symbol, interval="5"):
+        """
+        Получает самые свежие данные для символа из API биржи.
+
+        :param symbol: Символ для получения данных (например, "BTCUSD").
+        :param interval: Интервал времени для данных (например, '5' для 5 минут).
+        :return: DataFrame с последними данными.
+        """
+        try:
+            close_prices = self.close_prices(symbol, interval, limit=1)
+            if close_prices.empty:
+                logger.error(f"No latest data returned for {symbol}.")
+                return None
+
+            df = pd.DataFrame({"close": close_prices})
+            return df
+
+        except Exception as e:
+            logger.error(f"Exception occurred while fetching latest data: {e}")
+            return None
+
     def is_position(self):
         """
         Ищем открытую позицию по orderLinkId (clOrdId) за последние 7 дней.
