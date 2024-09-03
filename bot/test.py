@@ -4,8 +4,8 @@ from pybit.unified_trading import HTTP, AccountHTTP
 
 
 session = HTTP(
-    api_key="1rBEjCPlECvFYTCPWl",
-    api_secret="Y6MTIcKivJtzE80yquYYcrmwY6SOZ0vEMlB4",
+    api_key=os.getenv("API_KEY"),
+    api_secret=os.getenv("API_SECRET"),
 )
 
 if __name__ == "__main__":
