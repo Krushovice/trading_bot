@@ -324,4 +324,4 @@ class Bybit:
         Для удобного вывода из методов класса
         """
         caller = inspect.stack()[1].function
-        print(f"* {caller}", self.symbol, "\n\t", args, "\n")
+        logger.debug(f"* {caller} {self.symbol} - {args}")
