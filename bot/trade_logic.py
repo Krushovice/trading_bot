@@ -14,14 +14,43 @@ logger = logging.getLogger(__name__)
 
 
 class Bot(Bybit):
-    def __init__(self):
+    def __init__(self, max_usdt_to_spend=10):
         super(Bot, self).__init__()
-        self.model = TradingModel()  # Инициализация TradingModel
-        self.model.load_model()  # Загружаем модель при создании объекта Bot
+        self.model = TradingModel()  # Инициализация модели
         self.training_interval = 3600  # Интервал для переобучения модели (1 час)
         self.last_training_time = time.time()
+        self.max_usdt_to_spend = max_usdt_to_spend
+        self.spent_usdt = 0  # Инициализация потраченных средств
+
+        # Проверка и загрузка модели при создании объекта
+        if not self.load_or_train_model():
+            logger.error("Failed to initialize the model. Bot will not run.")
+            raise Exception("Model initialization failed")
+
+    def load_or_train_model(self):
+        """Загружает модель, если она существует, иначе обучает новую модель."""
+        try:
+            self.model.load_model()  # Попробуем загрузить модель
+            logger.info("Model loaded successfully.")
+            return True
+        except FileNotFoundError:
+            logger.info("Model file not found. Training a new model.")
+            historical_data = self.get_historical_data(self.symbol)
+            if historical_data is not None:
+                self.update_model(historical_data)  # Обучение новой модели
+                return True
+            else:
+                logger.error("Cannot retrieve historical data for model training.")
+                return False
+
+    def can_place_order(self, order_cost):
+        """
+        Проверяет, можно ли разместить ордер, не превышая лимит на расходы.
+        """
+        return (self.spent_usdt + order_cost) <= self.max_usdt_to_spend
 
     def calculate_indicators(self, data):
+        """Рассчитывает индикаторы для входных данных."""
         data["SMA_5"] = SMAIndicator(data["close"], window=5).sma_indicator()
         data["SMA_20"] = SMAIndicator(data["close"], window=20).sma_indicator()
         data["RSI"] = RSIIndicator(data["close"], window=14).rsi()
@@ -42,13 +71,14 @@ class Bot(Bybit):
                 "Bollinger_Low",
                 "Bollinger_Mid",
             ]
-        ]
+        ].copy()  # Явно создаем копию, чтобы избежать SettingWithCopyWarning
+
         features.dropna(inplace=True)
 
         if not features.empty:
-            X = features.values  # Преобразуем DataFrame в numpy массив
+            x = features.values  # Преобразуем DataFrame в numpy массив
             prediction = self.model.predict(
-                X
+                x
             )  # Используем метод predict из TradingModel
             return prediction[-1]  # Return the last prediction
         return None
@@ -72,6 +102,7 @@ class Bot(Bybit):
         )  # Округляем количество до допустимого количества знаков
 
     def execute_trade(self, signal, qty):
+        """Выполняет торговую операцию на основе сигнала."""
         symbol_price = self.get_symbol_price(self.symbol)
         if symbol_price is None:
             logger.error(f"Could not retrieve price for {self.symbol}.")
@@ -83,13 +114,19 @@ class Bot(Bybit):
             logger.error(f"Invalid quantity {qty} for trading.")
             return
 
-        side = "Buy" if signal == 1 else "Sell"
+        order_cost = float(qty) * symbol_price
 
-        try:
-            order = self.place_order(side=side, qty=qty)
-            logger.info(f"Executed {side} order for {qty} {self.symbol}: {order}")
-        except Exception as e:
-            logger.error(f"Exception occurred while executing trade: {e}")
+        side = "Buy" if signal == 1 else "Sell"
+        if self.can_place_order(order_cost):
+
+            try:
+                order = self.place_order(side=side, qty=qty)
+                logger.info(f"Executed {side} order for {qty} {self.symbol}: {order}")
+            except Exception as e:
+                logger.error(f"Exception occurred while executing trade: {e}")
+        else:
+            logger.warning(f"Order cost {order_cost} exceeds limit. Order not placed.")
+            return None
 
     def is_valid_order(self, qty, current_symbol_price):
         """Проверка, достаточно ли количество валюты для минимального ордера в USDT."""
@@ -107,8 +144,12 @@ class Bot(Bybit):
             logger.error(traceback.format_exc())
 
     def run(self):
+        """Основной цикл работы бота."""
         while True:
             try:
+                logger.info("The Bot is starting!")
+                self.check_permissions()
+                logger.info("Permissions checked successfully.")
                 latest_data = self.get_latest_data(self.symbol)
                 if latest_data is None:
                     logger.error(f"Failed to fetch latest data for {self.symbol}.")
