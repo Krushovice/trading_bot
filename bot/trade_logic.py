@@ -61,26 +61,35 @@ class Bot(Bybit):
         return data
 
     def generate_signal(self, data):
-        data = self.calculate_indicators(data)
-        features = data[
-            [
-                "SMA_5",
-                "SMA_20",
-                "RSI",
-                "Bollinger_High",
-                "Bollinger_Low",
-                "Bollinger_Mid",
-            ]
-        ].copy()  # Явно создаем копию, чтобы избежать SettingWithCopyWarning
+        """
+        Генерирует торговый сигнал на основе данных.
+        :param data: DataFrame с историческими данными
+        :return: Последний торговый сигнал (1 - Buy, 0 - Sell) или None
+        """
+        try:
+            data = self.calculate_indicators(data)
+            features = data[
+                [
+                    "SMA_5",
+                    "SMA_20",
+                    "RSI",
+                    "Bollinger_High",
+                    "Bollinger_Low",
+                    "Bollinger_Mid",
+                ]
+            ].copy()
 
-        features.dropna(inplace=True)
+            features.dropna(inplace=True)
 
-        if not features.empty:
-            x = features.values  # Преобразуем DataFrame в numpy массив
-            prediction = self.model.predict(
-                x
-            )  # Используем метод predict из TradingModel
-            return prediction[-1]  # Return the last prediction
+            if not features.empty:
+                x = features.values
+                prediction = self.model.predict(
+                    x
+                )  # Используем метод predict из TradingModel
+                return prediction[-1]  # Return the last prediction
+        except Exception as e:
+            logger.error(f"Exception occurred during signal generation: {e}")
+            logger.error(traceback.format_exc())
         return None
 
     def adjust_qty(self, qty):
@@ -97,36 +106,42 @@ class Bot(Bybit):
             qty = min_qty
             logger.info(f"Quantity adjusted to minimum valid amount: {qty}")
 
-        return round(
-            qty, qty_decimals
-        )  # Округляем количество до допустимого количества знаков
+        # Округляем количество до допустимого количества знаков
+        return round(qty, qty_decimals)
 
     def execute_trade(self, signal, qty):
         """Выполняет торговую операцию на основе сигнала."""
-        symbol_price = self.get_symbol_price(self.symbol)
-        if symbol_price is None:
-            logger.error(f"Could not retrieve price for {self.symbol}.")
-            return
+        try:
+            symbol_price = self.get_symbol_price(self.symbol)
+            if symbol_price is None:
+                logger.error(f"Could not retrieve price for {self.symbol}.")
+                return
 
-        qty = self.adjust_qty(qty)  # Корректируем количество
+            qty = self.adjust_qty(qty)  # Корректируем количество
 
-        if not self.is_valid_order(qty, symbol_price):
-            logger.error(f"Invalid quantity {qty} for trading.")
-            return
+            if not self.is_valid_order(qty, symbol_price):
+                logger.error(f"Invalid quantity {qty} for trading.")
+                return
 
-        order_cost = float(qty) * symbol_price
+            order_cost = float(qty) * symbol_price
 
-        side = "Buy" if signal == 1 else "Sell"
-        if self.can_place_order(order_cost):
-
-            try:
-                order = self.place_order(side=side, qty=qty)
-                logger.info(f"Executed {side} order for {qty} {self.symbol}: {order}")
-            except Exception as e:
-                logger.error(f"Exception occurred while executing trade: {e}")
-        else:
-            logger.warning(f"Order cost {order_cost} exceeds limit. Order not placed.")
-            return None
+            side = "Buy" if signal == 1 else "Sell"
+            if self.can_place_order(order_cost):
+                try:
+                    order = self.place_order(side=side, qty=qty)
+                    logger.info(
+                        f"Executed {side} order for {qty} {self.symbol}: {order}"
+                    )
+                except Exception as e:
+                    logger.error(f"Exception occurred while executing trade: {e}")
+                    logger.error(traceback.format_exc())
+            else:
+                logger.warning(
+                    f"Order cost {order_cost} exceeds limit. Order not placed."
+                )
+        except Exception as e:
+            logger.error(f"Exception occurred during trade execution: {e}")
+            logger.error(traceback.format_exc())
 
     def is_valid_order(self, qty, current_symbol_price):
         """Проверка, достаточно ли количество валюты для минимального ордера в USDT."""
