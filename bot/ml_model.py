@@ -118,11 +118,12 @@ class TradingModel:
 
     def load_model(self) -> None:
         """
-        Загрузка модели с диска.
+        Загрузка модели и масштабировщика с диска.
         """
         if os.path.exists(self.model_path):
-            self.model, self.scaler = joblib.load(self.model_path)
-            logger.info("Model loaded successfully.")
+            model_data = joblib.load(self.model_path)
+            self.model, self.scaler = model_data["model"], model_data["scaler"]
+            logger.info("Model and scaler loaded successfully.")
         else:
             raise FileNotFoundError(
                 "Model file not found. Please train the model first."
@@ -134,19 +135,22 @@ class TradingModel:
         :param X: np.array с данными для предсказания
         :return: Прогноз (1 - Buy, 0 - Sell)
         """
-        if self.model is None:
+        if self.model is None or self.scaler is None:
             raise ValueError(
-                "Model is not loaded or trained. Please train or load the model first."
+                "Model or scaler is not loaded or trained. Please train or load them first."
             )
+        if not isinstance(X, np.ndarray):
+            raise ValueError("Input data must be a numpy array.")
         X_scaled = self.scaler.transform(X)
         return self.model.predict(X_scaled)
 
     def save_model(self) -> None:
         """
-        Сохраняет модель в файл.
+        Сохраняет модель и масштабировщик в файл.
         """
         try:
-            joblib.dump((self.model, self.scaler), self.model_path)
+            model_data = {"model": self.model, "scaler": self.scaler}
+            joblib.dump(model_data, self.model_path)
             logger.info(f"Model saved successfully to {self.model_path}.")
         except Exception as e:
             logger.error(f"Exception occurred while saving model: {e}")
