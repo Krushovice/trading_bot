@@ -14,7 +14,10 @@ load_dotenv()
 if __name__ == "__main__":
     try:
         # Запуск бота
-        bot = Bot(max_usdt_to_spend=os.getenv("CAPITAL"))
+        bot = Bot(
+            max_usdt_to_spend=os.getenv("CAPITAL"),
+            interval=int(os.getenv("INTERVAL")),
+        )
         bot.run()
         print("Bot run!")
     except KeyboardInterrupt:
