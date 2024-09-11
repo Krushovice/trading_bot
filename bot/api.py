@@ -22,17 +22,11 @@ class Bybit:
     def __init__(self):
         logger.info(f"{os.getenv('NAME', 'Anon')} Bybit auth logged")
 
-        # # для определения позиции
         self.position_id = str(uuid.uuid4())
-        #
-        # # загрузка значения из переменных окружения,
-        # # чтобы при изменении окружения после запуска бота, бот продолжал нормально работать
+        self.qty = os.getenv("QTY")
         self.symbol = os.getenv("SYMBOL")
-        self.qty = str(os.getenv("QTY"))
+        self.category = "linear"
 
-        # На данный момент SDK python-okx предоставляет отдельные классы к каждой секции
-        # вместо единого клиента (хотя он в SDK есть, поэтому, надеюсь такой расклад не надолго)
-        # чтобы не дублировать параметры для каждого класса - в конструкторе инициализирую словарь настроек
         self.params = dict(
             api_key=os.getenv("API_KEY"),
             api_secret=os.getenv("API_SECRET"),
@@ -57,8 +51,7 @@ class Bybit:
 
     def close_prices(
         self,
-        symbol,
-        interval="5",
+        interval="1",
         limit=200,
         category="inverse",
     ):
@@ -72,7 +65,7 @@ class Bybit:
         """
         args = dict(
             category=category,
-            symbol=symbol,
+            symbol=self.symbol,
             interval=interval,
             limit=limit,
         )
@@ -107,27 +100,25 @@ class Bybit:
             logger.error(f"Exception occurred in close_prices: {e}")
             return pd.Series()
 
-    def get_instrument_info(self, symbol):
-        try:
-            response = MarketHTTP(**self.params).get_instruments_info(
-                category="linear",
-                symbol=symbol,
-            )
-            if response.get("retCode") == 0:
-                c = response.get("result", {}).get("list", [])
-                min_qty = c.get("lotSizeFilter", {}).get("minOrderQty", "0.0")
-                qty_decimals = abs(decimal.Decimal(min_qty).as_tuple().exponent)
-                price_decimals = int(c.get("priceScale", "4"))
-                min_qty = float(min_qty)
-                self.log(price_decimals, qty_decimals, min_qty)
-                return price_decimals, qty_decimals, min_qty
-            logger.error("Failed to retrieve instrument information.")
-            return None
-        except Exception as e:
-            logger.error(
-                f"Exception occurred while retrieving instrument information: {e}"
-            )
-            return None
+    def get_instrument_info(self):
+        """
+        Фильтры заданного инструмента
+        - макс колво знаков в аргументах цены,
+        - мин размер ордера в Базовой Валюте,
+        - макс размер ордера в БВ
+        """
+        r = HTTP(**self.params).get_instruments_info(
+            symbol=self.symbol,
+            category=self.category,
+        )
+        c = r.get("result", {}).get("list", [])[0]
+        min_qty = c.get("lotSizeFilter", {}).get("minOrderQty", "0.0")
+        qty_decimals = abs(decimal.Decimal(min_qty).as_tuple().exponent)
+        price_decimals = int(c.get("priceScale", "4"))
+        min_qty = float(min_qty)
+
+        self.log(price_decimals, qty_decimals, min_qty)
+        return price_decimals, qty_decimals, min_qty
 
     def get_symbol_price(self, symbol):
         """
@@ -168,7 +159,7 @@ class Bybit:
             orderType="Market",
             qty=str(qty),
             timeInForce="IOC",
-            orderLinkId=self.position_id,
+            orderLinkId=str(uuid.uuid4()),
         )
 
         try:
@@ -187,7 +178,24 @@ class Bybit:
             logger.error(f"Exception occurred while placing order: {e}")
             return None
 
-    def set_stop_loss(self, symbol, side, stop_loss_price):
+    def place_market_order_by_quote(
+        self,
+        qty,
+        side: str,
+    ):
+        """
+        Отправка ордера с размером позиции в Котируемой Валюте (USDT напр)
+        имеет смысл только для контрактов
+        """
+
+        self.place_order(qty, side)
+
+    def set_stop_loss(
+        self,
+        symbol,
+        side,
+        stop_loss_price,
+    ):
         """
         Устанавливает стоп-лосс для открытой позиции.
         :param symbol: Символ инструмента (например, "BTCUSDT")
@@ -215,9 +223,32 @@ class Bybit:
         except Exception as e:
             logger.error(f"Exception occurred while setting stop loss: {e}")
 
-    def enable_trailing_stop_loss(self, symbol, side, trailing_offset):
+    def get_open_positions(self, symbol):
         """
-        Устанавливает трейлинг стоп-лосс для открытой позиции.
+        Получает все активные позиции для указанного символа.
+        :param symbol: Символ инструмента (например, "BTCUSD").
+        :return: Список активных позиций.
+        """
+        try:
+            response = self.client.get_positions(
+                category="linear",
+                symbol=symbol,
+            )
+            if response.get("retCode") == 0:
+                positions = response["result"]["list"]
+                return positions
+            else:
+                logger.error(
+                    f"Failed to retrieve open positions: {response.get('retMsg')}"
+                )
+                return []
+        except Exception as e:
+            logger.error(f"Exception occurred while retrieving open positions: {e}")
+            return []
+
+    def set_trailing_stop(self, symbol, side, trailing_offset):
+        """
+        Устанавливает трейлинг стоп для открытой позиции.
         :param symbol: Символ инструмента (например, "BTCUSDT")
         :param side: Сторона сделки ("Buy" или "Sell")
         :param trailing_offset: Отклонение для трейлинг стопа
@@ -237,29 +268,65 @@ class Bybit:
 
             if response.get("retCode") == 0:
                 logger.info(
-                    f"Trailing stop loss set with offset {trailing_offset} for {side} order"
+                    f"Trailing stop set with offset {trailing_offset} for {side} order"
                 )
             else:
-                logger.error(
-                    f"Failed to set trailing stop loss: {response.get('retMsg')}"
-                )
+                logger.error(f"Failed to set trailing stop: {response.get('retMsg')}")
 
         except Exception as e:
-            logger.error(f"Exception occurred while setting trailing stop loss: {e}")
+            logger.error(f"Exception occurred while setting trailing stop: {e}")
 
-    def get_historical_data(self, symbol, interval="5", limit=200):
+    def update_trailing_stop(self, symbol, trades, trailing_stop_percent):
+        """
+        Обновляет трейлинг-стопы для активных позиций.
+        :param symbol: Символ инструмента (например, "BTCUSDT")
+        :param trades: Список активных трейдов
+        :param trailing_stop_percent: Процент трейлинг-стопа
+        """
+        try:
+            if not trades:
+                logger.error("No trades to update trailing_stop")
+                return
+            # Получение текущих цен
+            df = self.get_historical_data()
+            if df is None or df.empty:
+                logger.error(f"No latest data returned for {symbol}.")
+                return
+
+            current_price = df.iloc[0]["close"]
+            new_stop_price = 1
+            for trade in trades:
+                if trade["type"] == "long":
+                    # Обновление трейлинг-стопа для длинной позиции
+                    new_stop_price = max(
+                        trade["stop_price"], current_price * (1 - trailing_stop_percent)
+                    )
+                elif trade["type"] == "short":
+                    # Обновление трейлинг-стопа для короткой позиции
+                    new_stop_price = min(
+                        trade["stop_price"], current_price * (1 + trailing_stop_percent)
+                    )
+
+                if new_stop_price != trade["stop_price"]:
+                    # Установка нового трейлинг-стопа
+                    self.set_trailing_stop(symbol, trade["type"], new_stop_price)
+                    trade["stop_price"] = new_stop_price
+                    logger.info(
+                        f"Trailing stop updated to {new_stop_price} for {trade['type']} order"
+                    )
+
+        except Exception as e:
+            logger.error(f"Exception occurred while updating trailing stop: {e}")
+
+    def get_historical_data(self):
         """
         Получает исторические данные для символа из API биржи.
-
-        :param symbol: Символ для получения данных (например, "BTCUSD").
-        :param interval: Интервал времени для данных (например, '5' для 5 минут).
-        :param limit: Количество данных для получения.
         :return: DataFrame с историческими данными.
         """
         try:
-            close_prices = self.close_prices(symbol, interval, limit)
+            close_prices = self.close_prices()
             if close_prices.empty:
-                logger.error(f"No historical data returned for {symbol}.")
+                logger.error(f"No historical data returned for {self.symbol}.")
                 return None
 
             df = pd.DataFrame({"close": close_prices})
@@ -267,27 +334,6 @@ class Bybit:
 
         except Exception as e:
             logger.error(f"Exception occurred while fetching historical data: {e}")
-            return None
-
-    def get_latest_data(self, symbol, interval="5"):
-        """
-        Получает самые свежие данные для символа из API биржи.
-
-        :param symbol: Символ для получения данных (например, "BTCUSD").
-        :param interval: Интервал времени для данных (например, '5' для 5 минут).
-        :return: DataFrame с последними данными.
-        """
-        try:
-            close_prices = self.close_prices(symbol, interval, limit=1)
-            if close_prices.empty:
-                logger.error(f"No latest data returned for {symbol}.")
-                return None
-
-            df = pd.DataFrame({"close": close_prices})
-            return df
-
-        except Exception as e:
-            logger.error(f"Exception occurred while fetching latest data: {e}")
             return None
 
     def is_position(self):
