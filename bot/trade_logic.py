@@ -2,11 +2,9 @@ import os
 import time
 import traceback
 
-from ta.trend import SMAIndicator
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands
 
-from .ml_model import TradingModel
 from .api import Bybit
 import logging
 
@@ -14,79 +12,72 @@ logger = logging.getLogger(__name__)
 
 
 class Bot(Bybit):
-    def __init__(self, max_usdt_to_spend=10):
+    def __init__(self, max_usdt_to_spend=10, interval=60):
         super(Bot, self).__init__()
-        self.model = TradingModel()  # Инициализация модели
-        self.training_interval = 3600  # Интервал для переобучения модели (1 час)
-        self.last_training_time = time.time()
-        self.max_usdt_to_spend = max_usdt_to_spend
+        self.max_usdt_to_spend = int(max_usdt_to_spend)
         self.spent_usdt = 0  # Инициализация потраченных средств
+        self.interval = interval
+        self.price_decimals, self.qty_decimals, self.min_qty = (
+            self.get_instrument_info()
+        )
 
-        # Проверка и загрузка модели при создании объекта
-        if not self.load_or_train_model():
-            logger.error("Failed to initialize the model. Bot will not run.")
-            raise Exception("Model initialization failed")
-
-    def load_or_train_model(self):
-        """Загружает модель, если она существует, иначе обучает новую модель."""
-        try:
-            self.model.load_model()  # Попробуем загрузить модель
-            logger.info("Model loaded successfully.")
-            return True
-        except FileNotFoundError:
-            logger.info("Model file not found. Training a new model.")
-            historical_data = self.get_historical_data(self.symbol)
-            if historical_data is not None:
-                self.update_model(historical_data)  # Обучение новой модели
-                return True
-            else:
-                logger.error("Cannot retrieve historical data for model training.")
-                return False
+        logger.info(
+            "Bot initialized with max USDT to spend: %s", self.max_usdt_to_spend
+        )
 
     def can_place_order(self, order_cost):
-        """
-        Проверяет, можно ли разместить ордер, не превышая лимит на расходы.
-        """
-        return (self.spent_usdt + order_cost) <= self.max_usdt_to_spend
+        """Проверяет, можно ли разместить ордер, не превышая лимит на расходы."""
+        can_place = (self.spent_usdt + order_cost) <= self.max_usdt_to_spend
+        logger.debug(
+            f"Checking if order can be placed: {can_place} (order cost: {order_cost}, spent USDT: {self.spent_usdt})"
+        )
+        return can_place
 
     def calculate_indicators(self, data):
         """Рассчитывает индикаторы для входных данных."""
-        data["SMA_5"] = SMAIndicator(data["close"], window=5).sma_indicator()
-        data["SMA_20"] = SMAIndicator(data["close"], window=20).sma_indicator()
-        data["RSI"] = RSIIndicator(data["close"], window=14).rsi()
-        bollinger = BollingerBands(data["close"], window=20, window_dev=2)
-        data["Bollinger_High"] = bollinger.bollinger_hband()
-        data["Bollinger_Low"] = bollinger.bollinger_lband()
-        data["Bollinger_Mid"] = bollinger.bollinger_mavg()
+        try:
+            data["RSI"] = RSIIndicator(data["close"], window=13).rsi()
+            bollinger = BollingerBands(data["close"], window=20, window_dev=2)
+            data["Bollinger_High"] = bollinger.bollinger_hband()
+            data["Bollinger_Low"] = bollinger.bollinger_lband()
+            data["Bollinger_Mid"] = bollinger.bollinger_mavg()
+            logger.info("Indicators calculated successfully.")
+        except Exception as e:
+            logger.error(f"Failed to calculate indicators: {e}")
+            logger.error(traceback.format_exc())
         return data
 
     def generate_signal(self, data):
         """
         Генерирует торговый сигнал на основе данных.
         :param data: DataFrame с историческими данными
-        :return: Последний торговый сигнал (1 - Buy, 0 - Sell) или None
+        :return: Торговый сигнал (1 - Buy, 0 - Sell, None - No Signal)
         """
         try:
             data = self.calculate_indicators(data)
-            features = data[
-                [
-                    "SMA_5",
-                    "SMA_20",
-                    "RSI",
-                    "Bollinger_High",
-                    "Bollinger_Low",
-                    "Bollinger_Mid",
-                ]
-            ].copy()
+            print("Входящие данные:")
 
-            features.dropna(inplace=True)
+            latest_data = data.iloc[-1]
+            print(latest_data)
+            buy_condition = (latest_data["close"] < latest_data["Bollinger_Low"]) and (
+                latest_data["RSI"] <= 35
+            )
+            sell_condition = (
+                latest_data["close"] > latest_data["Bollinger_High"]
+            ) and (latest_data["RSI"] >= 65)
 
-            if not features.empty:
-                x = features.values
-                prediction = self.model.predict(
-                    x
-                )  # Используем метод predict из TradingModel
-                return prediction[-1]  # Return the last prediction
+            logger.debug(
+                f"Latest close price: {latest_data['close']}, Bollinger Low: {latest_data['Bollinger_Low']}, Bollinger High: {latest_data['Bollinger_High']}, RSI: {latest_data['RSI']}"
+            )
+
+            if buy_condition:
+                logger.info("Buy condition met.")
+                return 1  # Buy signal
+            elif sell_condition:
+                logger.info("Sell condition met.")
+                return 0  # Sell signal
+            else:
+                logger.info("No trading signal generated.")
         except Exception as e:
             logger.error(f"Exception occurred during signal generation: {e}")
             logger.error(traceback.format_exc())
@@ -94,69 +85,51 @@ class Bot(Bybit):
 
     def adjust_qty(self, qty):
         """Корректирует количество ордера в зависимости от минимально допустимого размера."""
-        instrument_info = self.get_instrument_info(self.symbol)
-        if not instrument_info:
-            logger.error("Failed to get instrument info.")
-            return qty
+        min_order_value_in_base = self._floor(
+            self.min_qty / (10**self.price_decimals), self.qty_decimals
+        )
 
-        price_decimals, qty_decimals, min_qty = instrument_info
+        if qty < min_order_value_in_base:
+            qty = min_order_value_in_base
 
-        # Устанавливаем минимальное количество, если qty меньше минимального
-        if qty < min_qty:
-            qty = min_qty
-            logger.info(f"Quantity adjusted to minimum valid amount: {qty}")
+        return qty
 
-        # Округляем количество до допустимого количества знаков
-        return round(qty, qty_decimals)
+    def get_valid_order_qty(self, current_symbol_price):
+        min_notional = 10  # Минимальная сумма в USDT
+        qty = self.floor_qty(min_notional / current_symbol_price)
+        return qty
 
-    def execute_trade(self, signal, qty):
-        """Выполняет торговую операцию на основе сигнала."""
-        try:
-            symbol_price = self.get_symbol_price(self.symbol)
-            if symbol_price is None:
-                logger.error(f"Could not retrieve price for {self.symbol}.")
-                return
+    def _floor(self, value, decimals):
+        """
+        Для аргументов цены нужно отбросить (округлить вниз)
+        до колва знаков заданных в фильтрах цены
+        """
+        factor = 1 / (10**decimals)
+        return (value // factor) * factor
 
-            qty = self.adjust_qty(qty)  # Корректируем количество
+    def floor_qty(self, value):
+        return self._floor(value, self.qty_decimals)
 
-            if not self.is_valid_order(qty, symbol_price):
-                logger.error(f"Invalid quantity {qty} for trading.")
-                return
+    def execute_trade_by_base(
+        self,
+        signal,
+    ):
+        side = "Buy" if signal == 1 else "Sell"
+        curr_price = self.get_symbol_price(self.symbol)
+        valid_qty = self.get_valid_order_qty(
+            current_symbol_price=curr_price,
+        )
+        if self.can_place_order(valid_qty):
 
-            order_cost = float(qty) * symbol_price
-
-            side = "Buy" if signal == 1 else "Sell"
-            if self.can_place_order(order_cost):
-                try:
-                    order = self.place_order(side=side, qty=qty)
-                    logger.info(
-                        f"Executed {side} order for {qty} {self.symbol}: {order}"
-                    )
-                except Exception as e:
-                    logger.error(f"Exception occurred while executing trade: {e}")
-                    logger.error(traceback.format_exc())
-            else:
-                logger.warning(
-                    f"Order cost {order_cost} exceeds limit. Order not placed."
-                )
-        except Exception as e:
-            logger.error(f"Exception occurred during trade execution: {e}")
-            logger.error(traceback.format_exc())
-
-    def is_valid_order(self, qty, current_symbol_price):
-        """Проверка, достаточно ли количество валюты для минимального ордера в USDT."""
-        amount_in_usdt = qty * current_symbol_price
-        return amount_in_usdt >= 5  # Например, минимальная сумма в USDT
-
-    def update_model(self, new_data):
-        """Переобучение модели на новых данных."""
-        try:
-            self.model.train(new_data)  # Переобучение модели
-            self.model.save_model()  # Сохранение обновленной модели
-            logger.info("Model retrained and saved.")
-        except Exception as e:
-            logger.error(f"Exception occurred during model update: {e}")
-            logger.error(traceback.format_exc())
+            try:
+                order = self.place_order(side=side, qty=valid_qty)
+                logger.info(f"Executed {side} order for base {self.symbol}: {order}")
+            except Exception as e:
+                logger.error(f"Exception occurred while executing trade: {e}")
+                logger.error(traceback.format_exc())
+        else:
+            logger.error("Deposit is empty")
+            return None
 
     def run(self):
         """Основной цикл работы бота."""
@@ -165,37 +138,35 @@ class Bot(Bybit):
                 logger.info("The Bot is starting!")
                 self.check_permissions()
                 logger.info("Permissions checked successfully.")
-                latest_data = self.get_latest_data(self.symbol)
+                latest_data = self.get_historical_data()
+
                 if latest_data is None:
                     logger.error(f"Failed to fetch latest data for {self.symbol}.")
-                    time.sleep(300)
+                    time.sleep(self.interval)
                     continue
 
-                try:
-                    signal = self.generate_signal(latest_data)
-                    if signal is not None:
-                        qty = float(
-                            os.getenv("QTY", 0.01)
-                        )  # Default quantity if not set
-                        self.execute_trade(signal, qty)
-                except Exception as e:
-                    logger.error(f"Exception occurred during trade execution: {e}")
-                    logger.error(traceback.format_exc())
+                signal = self.generate_signal(latest_data)
+                print(signal)
 
-                # Периодическое переобучение модели
-                current_time = time.time()
-                if current_time - self.last_training_time >= self.training_interval:
+                if signal is not None:
+                    trades = self.get_open_positions(self.symbol)
                     try:
-                        historical_data = self.get_historical_data(self.symbol)
-                        if historical_data is not None:
-                            self.update_model(historical_data)
-                            self.last_training_time = current_time
-                    except Exception as e:
-                        logger.error(f"Exception occurred during model update: {e}")
-                        logger.error(traceback.format_exc())
+                        if self.execute_trade_by_base(signal):
 
+                            self.update_trailing_stop(
+                                self.symbol,
+                                trades,
+                                trailing_stop_percent=0.01,
+                            )
+                            self.spent_usdt += 5
+                    except Exception as e:
+                        logger.error(f"Exception occurred while executing trade: {e}")
+                        break
+                else:
+                    logger.info("No signal generated.")
+                    print("Нет сигнала")
             except Exception as e:
                 logger.error(f"Exception occurred in main loop: {e}")
                 logger.error(traceback.format_exc())
 
-            time.sleep(300)  # Sleep for 5 minutes
+            time.sleep(self.interval)  # Sleep for 1 second
