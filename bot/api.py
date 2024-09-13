@@ -79,7 +79,7 @@ class Bybit:
                 klines = response["result"]["list"]
 
                 if not klines:
-                    logger.error(f"No kline data returned for {symbol}.")
+                    logger.error(f"No kline data returned for {self.symbol}.")
                     return pd.Series()
 
                 # Разворачиваем список свечей, чтобы он был в хронологическом порядке
@@ -178,51 +178,6 @@ class Bybit:
             logger.error(f"Exception occurred while placing order: {e}")
             return None
 
-    def place_market_order_by_quote(
-        self,
-        qty,
-        side: str,
-    ):
-        """
-        Отправка ордера с размером позиции в Котируемой Валюте (USDT напр)
-        имеет смысл только для контрактов
-        """
-
-        self.place_order(qty, side)
-
-    def set_stop_loss(
-        self,
-        symbol,
-        side,
-        stop_loss_price,
-    ):
-        """
-        Устанавливает стоп-лосс для открытой позиции.
-        :param symbol: Символ инструмента (например, "BTCUSDT")
-        :param side: Сторона сделки ("Buy" или "Sell")
-        :param stop_loss_price: Цена, на которой будет установлен стоп-лосс
-        """
-        args = dict(
-            category="linear",
-            symbol=symbol,
-            side="Sell" if side == "Buy" else "Buy",
-            orderType="StopLoss",
-            qty=str(self.qty),
-            stopLossPrice=stop_loss_price,
-            timeInForce="IOC",
-        )
-        try:
-            self.log("args", args)
-            response = TradeHTTP(**self.params).place_order(**args)
-
-            if response.get("retCode") == 0:
-                logger.info(f"Stop loss set at {stop_loss_price} for {side} order")
-            else:
-                logger.error(f"Failed to set stop loss: {response.get('retMsg')}")
-
-        except Exception as e:
-            logger.error(f"Exception occurred while setting stop loss: {e}")
-
     def get_open_positions(self, symbol):
         """
         Получает все активные позиции для указанного символа.
@@ -246,77 +201,77 @@ class Bybit:
             logger.error(f"Exception occurred while retrieving open positions: {e}")
             return []
 
-    def set_trailing_stop(self, symbol, side, trailing_offset):
+    def set_trailing_stop(
+        self,
+        trailing_percent: float = 0.001,
+    ) -> None:
         """
-        Устанавливает трейлинг стоп для открытой позиции.
-        :param symbol: Символ инструмента (например, "BTCUSDT")
-        :param side: Сторона сделки ("Buy" или "Sell")
-        :param trailing_offset: Отклонение для трейлинг стопа
+        Устанавливает трейлинг стоп.
+        :param trailing_percent: Отклонение для трейлинг стопа
         """
         args = dict(
-            category="linear",
-            symbol=symbol,
-            side="Sell" if side == "Buy" else "Buy",
-            orderType="TrailingStop",
-            qty=str(self.qty),
-            trailingOffset=trailing_offset,
-            timeInForce="IOC",
+            category=self.category,
+            symbol=self.symbol,
+            trailingStop=str(trailing_percent),
+            tpslMode="Full",
+            positionIdx=0,
         )
         try:
             self.log("args", args)
-            response = TradeHTTP(**self.params).place_order(**args)
+            if self.get_open_positions(self.symbol)[0]["side"]:
+                response = HTTP(**self.params).set_trading_stop(**args)
 
-            if response.get("retCode") == 0:
-                logger.info(
-                    f"Trailing stop set with offset {trailing_offset} for {side} order"
-                )
+                if response.get("retCode") == 0:
+                    print("Trailing_stop was set successfully!")
+                else:
+                    logger.error(
+                        f"Failed to set trailing stop: {response.get('retMsg')}"
+                    )
             else:
-                logger.error(f"Failed to set trailing stop: {response.get('retMsg')}")
-
+                print("Нет открытых позиций для установки стопа")
+                return
         except Exception as e:
             logger.error(f"Exception occurred while setting trailing stop: {e}")
 
-    def update_trailing_stop(self, symbol, trades, trailing_stop_percent):
+    def get_trailing_stop_limit_price(self, trades):
         """
-        Обновляет трейлинг-стопы для активных позиций.
-        :param symbol: Символ инструмента (например, "BTCUSDT")
+        Получает стоп-цену.
         :param trades: Список активных трейдов
-        :param trailing_stop_percent: Процент трейлинг-стопа
         """
         try:
             if not trades:
-                logger.error("No trades to update trailing_stop")
+                logger.error("No trades to get data")
                 return
             # Получение текущих цен
             df = self.get_historical_data()
             if df is None or df.empty:
-                logger.error(f"No latest data returned for {symbol}.")
-                return
+                logger.error(f"No latest data returned for {self.symbol}.")
+                return None
 
             current_price = df.iloc[0]["close"]
-            new_stop_price = 1
+            new_stop_price = 0
             for trade in trades:
                 if trade["type"] == "long":
                     # Обновление трейлинг-стопа для длинной позиции
                     new_stop_price = max(
-                        trade["stop_price"], current_price * (1 - trailing_stop_percent)
+                        trade["stop_price"], current_price * (1 - 0.001)
                     )
                 elif trade["type"] == "short":
                     # Обновление трейлинг-стопа для короткой позиции
                     new_stop_price = min(
-                        trade["stop_price"], current_price * (1 + trailing_stop_percent)
+                        trade["stop_price"], current_price * (1 + 0.001)
                     )
-
+                else:
+                    print(trade["type"])
                 if new_stop_price != trade["stop_price"]:
                     # Установка нового трейлинг-стопа
-                    self.set_trailing_stop(symbol, trade["type"], new_stop_price)
+
                     trade["stop_price"] = new_stop_price
-                    logger.info(
-                        f"Trailing stop updated to {new_stop_price} for {trade['type']} order"
-                    )
+                    print(new_stop_price)
+                    return new_stop_price
 
         except Exception as e:
-            logger.error(f"Exception occurred while updating trailing stop: {e}")
+            logger.error(f"Exception occurred while get stop_price: {e}")
 
     def get_historical_data(self):
         """
