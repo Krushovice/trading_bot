@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class Bot(Bybit):
-    def __init__(self, max_usdt_to_spend=10, interval=60):
+    def __init__(self, max_usdt_to_spend=10, interval=1):
         super(Bot, self).__init__()
         self.max_usdt_to_spend = int(max_usdt_to_spend)
         self.spent_usdt = 0  # Инициализация потраченных средств
@@ -60,14 +60,17 @@ class Bot(Bybit):
             latest_data = data.iloc[-1]
             print(latest_data)
             buy_condition = (latest_data["close"] < latest_data["Bollinger_Low"]) and (
-                latest_data["RSI"] <= 35
+                latest_data["RSI"] <= 30
             )
             sell_condition = (
                 latest_data["close"] > latest_data["Bollinger_High"]
-            ) and (latest_data["RSI"] >= 65)
+            ) and (latest_data["RSI"] >= 70)
 
             logger.debug(
-                f"Latest close price: {latest_data['close']}, Bollinger Low: {latest_data['Bollinger_Low']}, Bollinger High: {latest_data['Bollinger_High']}, RSI: {latest_data['RSI']}"
+                f"Latest close price: {latest_data['close']}, "
+                f"Bollinger Low: {latest_data['Bollinger_Low']},"
+                f" Bollinger High: {latest_data['Bollinger_High']}, "
+                f"RSI: {latest_data['RSI']}"
             )
 
             if buy_condition:
@@ -119,22 +122,27 @@ class Bot(Bybit):
         valid_qty = self.get_valid_order_qty(
             current_symbol_price=curr_price,
         )
-        if self.can_place_order(valid_qty):
 
-            try:
-                order = self.place_order(side=side, qty=valid_qty)
-                logger.info(f"Executed {side} order for base {self.symbol}: {order}")
-            except Exception as e:
-                logger.error(f"Exception occurred while executing trade: {e}")
-                logger.error(traceback.format_exc())
-        else:
-            logger.error("Deposit is empty")
-            return None
+        try:
+            self.set_trailing_stop(
+                trailing_percent=0.0001,
+            )
+        except Exception as e:
+            logger.error(f"Failed to set trailing stop: {e}")
+        try:
+            order = self.place_order(side=side, qty=valid_qty)
+            logger.info(f"Executed {side} order for base {self.symbol}: {order}")
+            return order
+        except Exception as e:
+            logger.error(f"Exception occurred while executing trade: {e}")
+            logger.error(traceback.format_exc())
 
     def run(self):
         """Основной цикл работы бота."""
+
         while True:
             try:
+
                 logger.info("The Bot is starting!")
                 self.check_permissions()
                 logger.info("Permissions checked successfully.")
@@ -146,25 +154,21 @@ class Bot(Bybit):
                     continue
 
                 signal = self.generate_signal(latest_data)
-                print(signal)
 
                 if signal is not None:
-                    trades = self.get_open_positions(self.symbol)
+                    print(signal)
                     try:
-                        if self.execute_trade_by_base(signal):
 
-                            self.update_trailing_stop(
-                                self.symbol,
-                                trades,
-                                trailing_stop_percent=0.01,
-                            )
-                            self.spent_usdt += 5
+                        if self.execute_trade_by_base(signal):
+                            print("Ордер успешно размещен")
+
                     except Exception as e:
                         logger.error(f"Exception occurred while executing trade: {e}")
-                        break
+
                 else:
                     logger.info("No signal generated.")
                     print("Нет сигнала")
+
             except Exception as e:
                 logger.error(f"Exception occurred in main loop: {e}")
                 logger.error(traceback.format_exc())
