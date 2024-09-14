@@ -37,7 +37,7 @@ class Bot(Bybit):
         """Рассчитывает индикаторы для входных данных."""
         try:
             data["RSI"] = RSIIndicator(data["close"], window=13).rsi()
-            bollinger = BollingerBands(data["close"], window=20, window_dev=2)
+            bollinger = BollingerBands(data["close"], window=19, window_dev=2)
             data["Bollinger_High"] = bollinger.bollinger_hband()
             data["Bollinger_Low"] = bollinger.bollinger_lband()
             data["Bollinger_Mid"] = bollinger.bollinger_mavg()
@@ -60,11 +60,11 @@ class Bot(Bybit):
             latest_data = data.iloc[-1]
             print(latest_data)
             buy_condition = (latest_data["close"] < latest_data["Bollinger_Low"]) and (
-                latest_data["RSI"] <= 30
+                latest_data["RSI"] <= 35
             )
             sell_condition = (
                 latest_data["close"] > latest_data["Bollinger_High"]
-            ) and (latest_data["RSI"] >= 70)
+            ) and (latest_data["RSI"] >= 65)
 
             logger.debug(
                 f"Latest close price: {latest_data['close']}, "
@@ -98,7 +98,7 @@ class Bot(Bybit):
         return qty
 
     def get_valid_order_qty(self, current_symbol_price):
-        min_notional = 10  # Минимальная сумма в USDT
+        min_notional = 20  # Минимальная сумма в USDT
         qty = self.floor_qty(min_notional / current_symbol_price)
         return qty
 
@@ -125,7 +125,7 @@ class Bot(Bybit):
 
         try:
             self.set_trailing_stop(
-                trailing_percent=0.0001,
+                trailing_percent=0.0002,
             )
         except Exception as e:
             logger.error(f"Failed to set trailing stop: {e}")
