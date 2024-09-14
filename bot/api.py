@@ -30,6 +30,7 @@ class Bybit:
         self.params = dict(
             api_key=os.getenv("API_KEY"),
             api_secret=os.getenv("API_SECRET"),
+            recv_window=5000,
         )
         self.client = HTTP(**self.params)
 
@@ -51,7 +52,7 @@ class Bybit:
 
     def close_prices(
         self,
-        interval="1",
+        interval="5",
         limit=200,
         category="inverse",
     ):
@@ -203,7 +204,7 @@ class Bybit:
 
     def set_trailing_stop(
         self,
-        trailing_percent: float = 0.001,
+        trailing_percent: float = 0.01,
     ) -> None:
         """
         Устанавливает трейлинг стоп.
@@ -218,7 +219,7 @@ class Bybit:
         )
         try:
             self.log("args", args)
-            if self.get_open_positions(self.symbol)[0]["side"]:
+            if self.get_open_positions(self.symbol)[0]["trailingStop"] == "0":
                 response = HTTP(**self.params).set_trading_stop(**args)
 
                 if response.get("retCode") == 0:
@@ -227,9 +228,7 @@ class Bybit:
                     logger.error(
                         f"Failed to set trailing stop: {response.get('retMsg')}"
                     )
-            else:
-                print("Нет открытых позиций для установки стопа")
-                return
+
         except Exception as e:
             logger.error(f"Exception occurred while setting trailing stop: {e}")
 
