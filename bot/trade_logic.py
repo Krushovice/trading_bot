@@ -118,15 +118,13 @@ class Bot(Bybit):
         signal,
     ):
         side = "Buy" if signal == 1 else "Sell"
-        curr_price = self.get_symbol_price(self.symbol)
+        curr_price = self.get_symbol_price()
         valid_qty = self.get_valid_order_qty(
             current_symbol_price=curr_price,
         )
 
         try:
-            self.set_trailing_stop(
-                trailing_percent=0.0002,
-            )
+            self.set_trailing_stop()
         except Exception as e:
             logger.error(f"Failed to set trailing stop: {e}")
         try:
@@ -136,6 +134,7 @@ class Bot(Bybit):
         except Exception as e:
             logger.error(f"Exception occurred while executing trade: {e}")
             logger.error(traceback.format_exc())
+            return None
 
     def run(self):
         """Основной цикл работы бота."""
