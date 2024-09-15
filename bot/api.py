@@ -26,11 +26,11 @@ class Bybit:
         self.qty = os.getenv("QTY")
         self.symbol = os.getenv("SYMBOL")
         self.category = "linear"
+        self.trailing_percent = os.getenv("TRAILING_PERCENT")
 
         self.params = dict(
             api_key=os.getenv("API_KEY"),
             api_secret=os.getenv("API_SECRET"),
-            recv_window=5000,
         )
         self.client = HTTP(**self.params)
 
@@ -58,7 +58,6 @@ class Bybit:
     ):
         """
         Возвращает серию цен закрытия (close) Pandas для обработки в библиотеке ta.
-        :param symbol: Символ инструмента (например, "BTCUSD")
         :param interval: Временной интервал свечей (например, 1, 3, 5, 15 минут и т.д.)
         :param limit: Количество свечей для получения
         :param category: Категория инструмента (например, "inverse" для обратных контрактов)
@@ -121,7 +120,7 @@ class Bybit:
         self.log(price_decimals, qty_decimals, min_qty)
         return price_decimals, qty_decimals, min_qty
 
-    def get_symbol_price(self, symbol):
+    def get_symbol_price(self):
         """
         Получает текущую цену указанного символа.
         :param symbol: Символ для поиска (например, "DOGEUSDT")
@@ -129,8 +128,8 @@ class Bybit:
         """
         try:
             response = MarketHTTP(**self.params).get_tickers(
-                category="linear",
-                symbol=symbol,
+                category=self.category,
+                symbol=self.symbol,
             )
             if response.get("retCode") == 0:
                 symbols = response["result"]["list"]
@@ -154,7 +153,7 @@ class Bybit:
         :return: order_id если заявка успешно размещена, иначе None
         """
         args = dict(
-            category="linear",
+            category=self.category,
             symbol=self.symbol,
             side=side,
             orderType="Market",
@@ -179,7 +178,7 @@ class Bybit:
             logger.error(f"Exception occurred while placing order: {e}")
             return None
 
-    def get_open_positions(self, symbol):
+    def get_open_positions(self):
         """
         Получает все активные позиции для указанного символа.
         :param symbol: Символ инструмента (например, "BTCUSD").
@@ -187,8 +186,8 @@ class Bybit:
         """
         try:
             response = self.client.get_positions(
-                category="linear",
-                symbol=symbol,
+                category=self.category,
+                symbol=self.symbol,
             )
             if response.get("retCode") == 0:
                 positions = response["result"]["list"]
@@ -202,24 +201,20 @@ class Bybit:
             logger.error(f"Exception occurred while retrieving open positions: {e}")
             return []
 
-    def set_trailing_stop(
-        self,
-        trailing_percent: float = 0.01,
-    ) -> None:
+    def set_trailing_stop(self) -> None:
         """
         Устанавливает трейлинг стоп.
-        :param trailing_percent: Отклонение для трейлинг стопа
         """
         args = dict(
             category=self.category,
             symbol=self.symbol,
-            trailingStop=str(trailing_percent),
+            trailingStop=str(self.trailing_percent),
             tpslMode="Full",
             positionIdx=0,
         )
         try:
             self.log("args", args)
-            if self.get_open_positions(self.symbol)[0]["trailingStop"] == "0":
+            if self.get_open_positions()[0]["trailingStop"] == "0":
                 response = HTTP(**self.params).set_trading_stop(**args)
 
                 if response.get("retCode") == 0:
@@ -297,7 +292,7 @@ class Bybit:
         """
         # Параметры запроса
         params = {
-            "category": "linear",  # Тип продукта (например, spot)
+            "category": self.category,  # Тип продукта (например, spot)
             "symbol": self.symbol,  # Торговая пара (например, BTCUSDT)
             "orderType": "Market",  # Тип ордера (например, Market)
             "orderLinkId": self.position_id,  # Пользовательский идентификатор ордера
