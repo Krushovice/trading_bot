@@ -10,14 +10,7 @@ services:
       - "6380:6379"
     volumes:
       - ./redisdata:/data
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
+
     command: >
       sh -c '
         mkdir -p /usr/local/etc/redis &&
