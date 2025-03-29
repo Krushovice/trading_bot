@@ -1,5 +1,4 @@
 import logging
-
 import os
 import sys
 from logging.handlers import RotatingFileHandler
@@ -9,31 +8,36 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def setup_logger(module_name):
     logger = logging.getLogger(module_name)
-    logger.setLevel(logging.ERROR)
+    logger.setLevel(
+        logging.DEBUG
+    )  # Общий уровень для логгера (управляется handler'ами отдельно)
+
     filename = os.path.splitext(os.path.basename(module_name))[0]
 
-    # Проверяем, был ли уже добавлен обработчик
     if not logger.handlers:
-        # Добавляем обработчик для записи в файл
+        # Создание директории для логов, если её нет
+        log_dir = f"{BASE_DIR}/logs"
+        os.makedirs(log_dir, exist_ok=True)
+
+        # Файловый обработчик (только ошибки и выше)
         file_handler = RotatingFileHandler(
-            f"{BASE_DIR}/logs/{filename}.log",
+            f"{log_dir}/{filename}.log",
             maxBytes=100000,
             backupCount=5,
-            encoding="utf-8",  # Добавляем поддержку UTF-8
+            encoding="utf-8",
         )
-        formatter = logging.Formatter(
-            "%(asctime)s - %(levelname)s - %(message)s",
+        file_handler.setLevel(logging.ERROR)
+        file_formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
 
-        # Добавляем обработчик для вывода в консоль
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        console_handler.setLevel(logging.INFO)  # Установите уровень лога для консоли
-        console_handler.setStream(
-            sys.stdout
-        )  # Используем sys.stdout для поддержки UTF-8
+        # Консольный обработчик (только INFO)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_formatter = logging.Formatter("%(asctime)s - %(message)s")
+        console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)
 
     return logger
