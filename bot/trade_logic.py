@@ -2,174 +2,186 @@ import os
 import time
 import traceback
 
-from ta.momentum import RSIIndicator
-from ta.volatility import BollingerBands
+from ta.trend import EMAIndicator
+from ta.volatility import AverageTrueRange
 
 from .api import Bybit
-import logging
 
-logger = logging.getLogger(__name__)
+from .logger import setup_logger
+from .storage import PositionStorage
+
+logger = setup_logger(__name__)
 
 
 class Bot(Bybit):
-    def __init__(self, max_usdt_to_spend=10, interval=1):
-        super(Bot, self).__init__()
-        self.max_usdt_to_spend = int(max_usdt_to_spend)
-        self.spent_usdt = 0  # Инициализация потраченных средств
+    def __init__(
+        self,
+        storage,
+        max_usdt_to_spend=10,
+        interval=300,
+    ):
+        super().__init__()
+        self.storage = storage
+        self.max_usdt_to_spend = max_usdt_to_spend
         self.interval = interval
-        self.price_decimals, self.qty_decimals, self.min_qty = (
-            self.get_instrument_info()
-        )
-
-        logger.info(
-            "Bot initialized with max USDT to spend: %s", self.max_usdt_to_spend
-        )
-
-    def can_place_order(self, order_cost):
-        """Проверяет, можно ли разместить ордер, не превышая лимит на расходы."""
-        can_place = (self.spent_usdt + order_cost) <= self.max_usdt_to_spend
-        logger.debug(
-            f"Checking if order can be placed: {can_place} (order cost: {order_cost}, spent USDT: {self.spent_usdt})"
-        )
-        return can_place
+        self.fast_ema_period = int(os.getenv("FAST_EMA_LEN"))
+        self.slow_ema_period = int(os.getenv("SLOW_EMA_LEN"))
+        self.sr_period = int(os.getenv("SR_PERIOD"))
+        self.buffer_pct = float(os.getenv("BUFFER_PCT"))
+        self.atr_period = int(os.getenv("ATR_PERIOD"))
+        self.atr_mult = float(os.getenv("ATR_MULT"))
+        self.vol_sma_period = int(os.getenv("VOL_SMA_PERIOD"))
 
     def calculate_indicators(self, data):
-        """Рассчитывает индикаторы для входных данных."""
-        try:
-            data["RSI"] = RSIIndicator(data["close"], window=13).rsi()
-            bollinger = BollingerBands(data["close"], window=19, window_dev=2)
-            data["Bollinger_High"] = bollinger.bollinger_hband()
-            data["Bollinger_Low"] = bollinger.bollinger_lband()
-            data["Bollinger_Mid"] = bollinger.bollinger_mavg()
-            logger.info("Indicators calculated successfully.")
-        except Exception as e:
-            logger.error(f"Failed to calculate indicators: {e}")
-            logger.error(traceback.format_exc())
+        # Явное преобразование типов данных
+        data["close"] = data["close"].astype(float)
+        data["high"] = data["high"].astype(float)
+        data["low"] = data["low"].astype(float)
+        data["volume"] = data["volume"].astype(float)
+
+        # EMA с fillna=True
+        data["fast_ema"] = EMAIndicator(
+            close=data["close"],
+            window=self.fast_ema_period,
+            fillna=True,
+        ).ema_indicator()
+        data["slow_ema"] = EMAIndicator(
+            close=data["close"],
+            window=self.slow_ema_period,
+            fillna=True,
+        ).ema_indicator()
+
+        # Support и Resistance
+        data["support"] = data["low"].rolling(self.sr_period).min()
+        data["resistance"] = data["high"].rolling(self.sr_period).max()
+
+        # Буферные зоны входа
+        data["support_upper"] = data["support"] * (1 + self.buffer_pct / 100)
+        data["resistance_lower"] = data["resistance"] * (1 - self.buffer_pct / 100)
+
+        # ATR и средний ATR
+        atr_indicator = AverageTrueRange(
+            high=data["high"],
+            low=data["low"],
+            close=data["close"],
+            window=self.atr_period,
+            fillna=True,
+        )
+        data["atr"] = atr_indicator.average_true_range()
+        data["avg_atr"] = data["atr"].rolling(self.atr_period).mean()
+
+        # Средний объем за период
+        data["vol_sma"] = data["volume"].rolling(self.vol_sma_period).mean()
+
         return data
 
+    def volatility_filter(self, latest):
+        volume_condition = latest["volume"] > latest["vol_sma"]
+        atr_condition = latest["atr"] > latest["avg_atr"] * self.atr_mult
+        return volume_condition and atr_condition
+
     def generate_signal(self, data):
-        """
-        Генерирует торговый сигнал на основе данных.
-        :param data: DataFrame с историческими данными
-        :return: Торговый сигнал (1 - Buy, 0 - Sell, None - No Signal)
-        """
-        try:
-            data = self.calculate_indicators(data)
-            print("Входящие данные:")
+        latest = data.iloc[-1]
 
-            latest_data = data.iloc[-1]
-            print(latest_data)
-            buy_condition = (latest_data["close"] < latest_data["Bollinger_Low"]) and (
-                latest_data["RSI"] <= 35
-            )
-            sell_condition = (
-                latest_data["close"] > latest_data["Bollinger_High"]
-            ) and (latest_data["RSI"] >= 65)
+        trend_up = latest["fast_ema"] > latest["slow_ema"]
+        trend_down = latest["fast_ema"] < latest["slow_ema"]
 
-            logger.debug(
-                f"Latest close price: {latest_data['close']}, "
-                f"Bollinger Low: {latest_data['Bollinger_Low']},"
-                f" Bollinger High: {latest_data['Bollinger_High']}, "
-                f"RSI: {latest_data['RSI']}"
-            )
+        long_entry = trend_up and (
+            latest["support_upper"] >= latest["low"] >= latest["support"]
+        )
+        short_entry = trend_down and (
+            latest["resistance_lower"] <= latest["high"] <= latest["resistance"]
+        )
 
-            if buy_condition:
-                logger.info("Buy condition met.")
-                return 1  # Buy signal
-            elif sell_condition:
-                logger.info("Sell condition met.")
-                return 0  # Sell signal
-            else:
-                logger.info("No trading signal generated.")
-        except Exception as e:
-            logger.error(f"Exception occurred during signal generation: {e}")
-            logger.error(traceback.format_exc())
+        # Проверка фильтра волатильности и объёма
+        volatility_ok = self.volatility_filter(latest)
+
+        # Проверяем текущие открытые позиции
+        positions = self.get_open_positions()
+        position_side = positions[0]["side"] if positions else None
+
+        # Сигналы входа с учётом фильтра волатильности
+        if long_entry and volatility_ok:
+            if position_side != "Buy":
+                return "Buy"
+        elif short_entry and volatility_ok:
+            if position_side != "Sell":
+                return "Sell"
+
+        # Сигналы выхода по TP
+        if position_side == "Buy" and latest["high"] >= latest["resistance"]:
+            return "Close_Buy"
+        if position_side == "Sell" and latest["low"] <= latest["support"]:
+            return "Close_Sell"
+
         return None
 
-    def adjust_qty(self, qty):
-        """Корректирует количество ордера в зависимости от минимально допустимого размера."""
-        min_order_value_in_base = self._floor(
-            self.min_qty / (10**self.price_decimals), self.qty_decimals
-        )
-
-        if qty < min_order_value_in_base:
-            qty = min_order_value_in_base
-
-        return qty
-
-    def get_valid_order_qty(self, current_symbol_price):
-        min_notional = 20  # Минимальная сумма в USDT
-        qty = self.floor_qty(min_notional / current_symbol_price)
-        return qty
-
-    def _floor(self, value, decimals):
-        """
-        Для аргументов цены нужно отбросить (округлить вниз)
-        до колва знаков заданных в фильтрах цены
-        """
-        factor = 1 / (10**decimals)
-        return (value // factor) * factor
-
-    def floor_qty(self, value):
-        return self._floor(value, self.qty_decimals)
-
-    def execute_trade_by_base(
-        self,
-        signal,
-    ):
-        side = "Buy" if signal == 1 else "Sell"
-        curr_price = self.get_symbol_price()
-        valid_qty = self.get_valid_order_qty(
-            current_symbol_price=curr_price,
-        )
-
+    def execute_trade(self, signal, latest_price):
         try:
-            self.set_trailing_stop()
+            positions = self.get_open_positions()
+            current_side = positions[0]["side"] if positions else None
+            position_qty = sum(float(p["size"]) for p in positions) if positions else 0
+            qty = round(100 / latest_price, self.qty_decimals)
+
+            if signal == "Buy":
+                if current_side == "Sell":
+                    self.place_order("Buy", position_qty)
+                    logger.info(f"Переворот позиции Short → Long: {position_qty} {self.symbol}")
+
+                if current_side != "Buy" or len(positions) < 2:
+                    order_id = self.place_order("Buy", qty)
+                    if order_id:
+                        self.set_stop_loss("Buy", latest_price)
+                        logger.info(f"Long ордер: {qty} {self.symbol} по {latest_price}")
+
+            elif signal == "Sell":
+                if current_side == "Buy":
+                    self.place_order("Sell", position_qty)
+                    logger.info(f"Переворот позиции Long → Short: {position_qty} {self.symbol}")
+
+                if current_side != "Sell" or len(positions) < 2:
+                    order_id = self.place_order("Sell", qty)
+                    if order_id:
+                        self.set_stop_loss("Sell", latest_price)
+                        logger.info(f"Short ордер: {qty} {self.symbol} по {latest_price}")
+
+            elif signal == "Close_Buy" and current_side == "Buy":
+                self.place_order("Sell", position_qty)
+                self.storage.clear_position(self.symbol)
+                logger.info(f"Закрытие Long по TP: {position_qty} {self.symbol}")
+
+            elif signal == "Close_Sell" and current_side == "Sell":
+                self.place_order("Buy", position_qty)
+                self.storage.clear_position(self.symbol)
+                logger.info(f"Закрытие Short по TP: {position_qty} {self.symbol}")
+
         except Exception as e:
-            logger.error(f"Failed to set trailing stop: {e}")
-        try:
-            order = self.place_order(side=side, qty=valid_qty)
-            logger.info(f"Executed {side} order for base {self.symbol}: {order}")
-            return order
-        except Exception as e:
-            logger.error(f"Exception occurred while executing trade: {e}")
-            logger.error(traceback.format_exc())
-            return None
+            logger.error(f"Ошибка при исполнении ордера: {e}", exc_info=True)
+
 
     def run(self):
-        """Основной цикл работы бота."""
+        position = self.storage.load_position(self.symbol)
+        logger.info(f"Текущее состояние позиции: {position}")
 
         while True:
             try:
-
-                logger.info("The Bot is starting!")
-                self.check_permissions()
-                logger.info("Permissions checked successfully.")
-                latest_data = self.get_historical_data()
-
-                if latest_data is None:
-                    logger.error(f"Failed to fetch latest data for {self.symbol}.")
+                data = self.get_historical_data()
+                if data.empty:
+                    logger.warning("Нет исторических данных. Повторный запрос...")
                     time.sleep(self.interval)
                     continue
 
-                signal = self.generate_signal(latest_data)
+                data = self.calculate_indicators(data)
+                signal = self.generate_signal(data)
+                latest_price = self.get_symbol_price()
 
-                if signal is not None:
-                    print(signal)
-                    try:
-
-                        if self.execute_trade_by_base(signal):
-                            print("Ордер успешно размещен")
-
-                    except Exception as e:
-                        logger.error(f"Exception occurred while executing trade: {e}")
-
+                if signal:
+                    logger.info(f"Получен сигнал: {signal} по цене {latest_price}")
+                    self.execute_trade(signal, latest_price)
                 else:
-                    logger.info("No signal generated.")
-                    print("Нет сигнала")
+                    logger.info("Нет сигнала на текущий момент.")
 
             except Exception as e:
-                logger.error(f"Exception occurred in main loop: {e}")
-                logger.error(traceback.format_exc())
+                logger.error(f"Ошибка в основном цикле: {e}", exc_info=True)
 
-            time.sleep(self.interval)  # Sleep for 1 second
+            time.sleep(self.interval)
