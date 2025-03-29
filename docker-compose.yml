@@ -56,7 +56,7 @@ services:
       - STOP_LOSS_PERCENT=${STOP_LOSS_PERCENT}
       - CAPITAL=${CAPITAL}
       - FAST_EMA_LEN=${FAST_EMA_LEN}
-      - SLOW_EMA_LEN=${}
+      - SLOW_EMA_LEN=${SLOW_EMA_LEN}
       - SR_PERIOD=${SLOW_EMA_LEN}
       - BUFFER_PCT=${BUFFER_PCT}
       - ATR_PERIOD=${ATR_PERIOD}
