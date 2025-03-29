@@ -14,8 +14,10 @@ class PositionStorage:
     ):
         self.redis = redis.Redis(
             host=os.getenv("REDIS_HOST", "localhost"),
-            port=int(os.getenv("REDIS_PORT", 6379)),
-            db=int(os.getenv("REDIS_DB", 1)),
+            port=int(os.getenv("REDIS_PORT")),
+            username=os.getenv("REDIS_USER"),
+            password=os.getenv("REDIS_USER_PASSWORD"),
+            db=int(os.getenv("REDIS_DB", 0)),
             decode_responses=True,
         )
 
