@@ -1,0 +1,23 @@
+version: '3.9'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: bot-redis
+    restart: always
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+
+  trading_bot:
+    build: .
+    container_name: trading-bot
+    restart: always
+    depends_on:
+      - redis
+    env_file:
+      - .env
+
+volumes:
+  redis-data:
