@@ -116,52 +116,60 @@ class Bot(Bybit):
 
         return None
 
-    def execute_trade(self, signal, latest_price):
-        try:
-            positions = self.get_open_positions()
-            current_side = positions[0]["side"] if positions else None
-            position_qty = sum(float(p["size"]) for p in positions) if positions else 0
-            qty = round(100 / latest_price, self.qty_decimals)
+    def execute_trade(self, signal, latest_data):
+        positions = self.get_open_positions()
+        current_side = positions[0]["side"] if positions else None
+        position_qty = sum(float(p["size"]) for p in positions) if positions else 0
 
+        qty = round(100 / latest_data["close"], self.qty_decimals)
+
+        try:
             if signal == "Buy":
+                limit_price = latest_data["support_upper"]
+
                 if current_side == "Sell":
-                    self.place_order("Buy", position_qty)
-                    logger.info(f"Переворот позиции Short → Long: {position_qty} {self.symbol}")
+                    self.place_order("Buy", position_qty, limit_price)
+                    logger.info(f"🔄 Переворот Short → Long по {limit_price}")
 
                 if current_side != "Buy" or len(positions) < 2:
-                    order_id = self.place_order("Buy", qty)
+                    order_id = self.place_order("Buy", qty, limit_price)
                     if order_id:
-                        self.set_stop_loss("Buy", latest_price)
-                        logger.info(f"Long ордер: {qty} {self.symbol} по {latest_price}")
+                        self.set_stop_loss("Buy", limit_price)
+                        logger.info(f"📈 Long лимитный ордер на {qty} по {limit_price}")
 
             elif signal == "Sell":
+                limit_price = latest_data["resistance_lower"]
+
                 if current_side == "Buy":
-                    self.place_order("Sell", position_qty)
-                    logger.info(f"Переворот позиции Long → Short: {position_qty} {self.symbol}")
+                    self.place_order("Sell", position_qty, limit_price)
+                    logger.info(f"🔄 Переворот Long → Short по {limit_price}")
 
                 if current_side != "Sell" or len(positions) < 2:
-                    order_id = self.place_order("Sell", qty)
+                    order_id = self.place_order("Sell", qty, limit_price)
                     if order_id:
-                        self.set_stop_loss("Sell", latest_price)
-                        logger.info(f"Short ордер: {qty} {self.symbol} по {latest_price}")
+                        self.set_stop_loss("Sell", limit_price)
+                        logger.info(f"📉 Short лимитный ордер на {qty} по {limit_price}")
 
             elif signal == "Close_Buy" and current_side == "Buy":
-                self.place_order("Sell", position_qty)
+                tp_price = latest_data["resistance"]
+                self.place_order("Sell", position_qty, tp_price)
                 self.storage.clear_position(self.symbol)
-                logger.info(f"Закрытие Long по TP: {position_qty} {self.symbol}")
+                logger.info(f"✅ Закрытие Long позиции по TP на уровне {tp_price}")
 
             elif signal == "Close_Sell" and current_side == "Sell":
-                self.place_order("Buy", position_qty)
+                tp_price = latest_data["support"]
+                self.place_order("Buy", position_qty, tp_price)
                 self.storage.clear_position(self.symbol)
-                logger.info(f"Закрытие Short по TP: {position_qty} {self.symbol}")
+                logger.info(f"✅ Закрытие Short позиции по TP на уровне {tp_price}")
 
         except Exception as e:
-            logger.error(f"Ошибка при исполнении ордера: {e}", exc_info=True)
+            logger.error(f"Ошибка исполнения лимитного ордера: {e}", exc_info=True)
+
 
 
     def run(self):
         position = self.storage.load_position(self.symbol)
-        logger.info(f"Текущее состояние позиции: {position}")
+        logger.info(f"🚩 Текущее состояние позиции: {position}")
 
         while True:
             try:
@@ -173,15 +181,15 @@ class Bot(Bybit):
 
                 data = self.calculate_indicators(data)
                 signal = self.generate_signal(data)
-                latest_price = self.get_symbol_price()
+                latest_data = data.iloc[-1]
 
                 if signal:
-                    logger.info(f"Получен сигнал: {signal} по цене {latest_price}")
-                    self.execute_trade(signal, latest_price)
+                    logger.info(f"⚡️ Получен сигнал: {signal}")
+                    self.execute_trade(signal, latest_data)
                 else:
-                    logger.info("Нет сигнала на текущий момент.")
+                    logger.info("🔕 Нет сигнала.")
 
             except Exception as e:
-                logger.error(f"Ошибка в основном цикле: {e}", exc_info=True)
+                logger.error(f"Ошибка в цикле работы: {e}", exc_info=True)
 
             time.sleep(self.interval)

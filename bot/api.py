@@ -106,24 +106,26 @@ class Bybit:
         except Exception as e:
             logger.error(e)
 
-    def place_order(self, side, qty):
+    def place_order(self, side, qty, price):
         try:
             response = self.client.place_order(
                 category=self.category,
                 symbol=self.symbol,
                 side=side,
-                orderType="Market",
+                orderType="Limit",
                 qty=str(qty),
-                timeInForce="IOC",
+                price=str(price),
+                timeInForce="PostOnly",  # не исполнится сразу по рынку
             )
             if response["retCode"] == 0:
-                logger.info(f"Ордер успешно размещён: {side} {qty} {self.symbol}")
+                logger.info(f"Лимитный ордер размещён: {side} {qty} по цене {price}")
                 return response["result"]["orderId"]
             else:
-                logger.error(f"Ошибка API при размещении ордера: {response['retMsg']}")
+                logger.error(f"Ошибка API при размещении лимитного ордера: {response['retMsg']}")
 
         except Exception as e:
-            logger.error(f"Ошибка API Bybit при размещении ордера: {e}", exc_info=True)
+            logger.error(f"Ошибка API Bybit при размещении лимитного ордера: {e}", exc_info=True)
+
 
 
     def get_open_positions(self):
