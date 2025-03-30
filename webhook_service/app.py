@@ -20,7 +20,7 @@ storage = PositionStorage()
 bot = Bot(storage=storage)
 
 
-@app.post("/trw_webhook")
+@app.post("/trading_webhook")
 async def webhook(request: Request):
     data = await request.json()
     side = data["side"]
