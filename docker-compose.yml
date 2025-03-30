@@ -1,58 +1,17 @@
 version: "3.3"
+
 services:
-  redis:
-    image: redis:latest
-    container_name: redis_container
-    environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - REDIS_USER=${REDIS_USER}
-      - REDIS_USER_PASSWORD=${REDIS_USER_PASSWORD}
-    ports:
-      - "6380:6379"
-    volumes:
-      - ./redisdata:/data
-
-    command: >
-      sh -c '
-        mkdir -p /usr/local/etc/redis &&
-        echo "bind 0.0.0.0" > /usr/local/etc/redis/redis.conf &&
-        echo "requirepass $REDIS_PASSWORD" >> /usr/local/etc/redis/redis.conf &&
-        echo "appendonly yes" >> /usr/local/etc/redis/redis.conf &&
-        echo "appendfsync everysec" >> /usr/local/etc/redis/redis.conf &&
-        echo "user default on nopass ~* +@all" > /usr/local/etc/redis/users.acl &&
-        echo "user $REDIS_USER on >$REDIS_USER_PASSWORD ~* +@all" >> /usr/local/etc/redis/users.acl &&
-        redis-server /usr/local/etc/redis/redis.conf --aclfile /usr/local/etc/redis/users.acl
-      '
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "$REDIS_PASSWORD", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    restart: unless-stopped
-    tty: true
-    stdin_open: true
-
-
   trading_bot:
     build: .
-    container_name: trading-bot
-    restart: always
+    container_name: trading_webhook_service
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
     depends_on:
       - redis
     environment:
       - API_KEY=${API_KEY}
       - API_SECRET=${API_SECRET}
-      - SYMBOL=${SYMBOL}
       - CATEGORY=${CATEGORY}
-      - QTY=${QTY}
-      - TIMEFRAME=${TIMEFRAME}
-      - LIMIT=${LIMIT}
       - STOP_LOSS_PERCENT=${STOP_LOSS_PERCENT}
-      - CAPITAL=${CAPITAL}
-      - FAST_EMA_LEN=${FAST_EMA_LEN}
-      - SLOW_EMA_LEN=${SLOW_EMA_LEN}
-      - SR_PERIOD=${SLOW_EMA_LEN}
-      - BUFFER_PCT=${BUFFER_PCT}
-      - ATR_PERIOD=${ATR_PERIOD}
-      - ATR_MULT=${ATR_MULT}
-      - VOL_SMA_PERIOD=${VOL_SMA_PERIOD}
+

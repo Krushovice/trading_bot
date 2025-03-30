@@ -1,10 +1,6 @@
 import os
-import uuid
-import inspect
 
-import pandas as pd
-from pybit.unified_trading import HTTP, AccountHTTP, MarketHTTP, TradeHTTP
-from pybit import exceptions
+from pybit.unified_trading import HTTP
 
 from . import setup_logger
 
@@ -15,12 +11,8 @@ class Bybit:
     def __init__(self):
         logger.info(f"{os.getenv('NAME', 'Anon')} Bybit auth logged")
 
-        self.position_id = str(uuid.uuid4())
-        self.symbol = os.getenv("SYMBOL")
         self.category = "linear"
         self.stop_loss_pct = float(os.getenv("STOP_LOSS_PERCENT", 3.0))
-        self.timeframe = os.getenv("TIMEFRAME", "5")
-        self.limit = int(os.getenv("LIMIT", "100"))
 
         self.params = dict(
             api_key=os.getenv("API_KEY"),
@@ -29,55 +21,16 @@ class Bybit:
         )
         self.client = HTTP(**self.params)
 
-        instrument_info = self.get_instruments_info()
-        if instrument_info:
-            self.price_decimals, self.qty_decimals, self.min_qty = instrument_info
-        else:
-            self.price_decimals, self.qty_decimals, self.min_qty = 4, 3, 0.001
-
     def check_permissions(self):
         try:
             self.client.get_wallet_balance()
         except Exception as e:
             logger.error(e)
 
-    def get_historical_data(self):
-        args = dict(
-            category=self.category,
-            symbol=self.symbol,
-            interval=self.timeframe,
-            limit=self.limit,
-        )
-
-        response = self.client.get_kline(**args)
-        if response["retCode"] == 0:
-            klines = response["result"]["list"]
-            if klines:
-                klines.reverse()  # от старых к новым
-                df = pd.DataFrame(
-                    klines,
-                    columns=[
-                        "timestamp",
-                        "open",
-                        "high",
-                        "low",
-                        "close",
-                        "volume",
-                        "turnover",
-                    ],
-                )
-                return df.astype(float)
-            else:
-                logger.error(f"No kline data returned for {self.symbol}.")
-        else:
-            logger.error(response["retMsg"])
-        return pd.DataFrame()
-
-
-    def get_instruments_info(self):
+    def get_instruments_info(self, symbol):
         try:
             response = self.client.get_instruments_info(
-                symbol=self.symbol,
+                symbol=symbol,
                 category=self.category,
             )
             if response["retCode"] == 0 and response["result"]["list"]:
@@ -92,11 +45,11 @@ class Bybit:
             logger.error(e)
         return None
 
-    def get_symbol_price(self):
+    def get_symbol_price(self, symbol):
         try:
             response = self.client.get_tickers(
                 category=self.category,
-                symbol=self.symbol,
+                symbol=symbol,
             )
             if response["retCode"] == 0:
                 symbols = response["result"]["list"]
@@ -106,33 +59,37 @@ class Bybit:
         except Exception as e:
             logger.error(e)
 
-    def place_order(self, side, qty, price):
+    def place_order(self, symbol, side, qty, price):
         try:
             response = self.client.place_order(
                 category=self.category,
-                symbol=self.symbol,
+                symbol=symbol,
                 side=side,
                 orderType="Limit",
                 qty=str(qty),
                 price=str(price),
-                timeInForce="PostOnly",  # не исполнится сразу по рынку
+                timeInForce="PostOnly",
             )
             if response["retCode"] == 0:
-                logger.info(f"Лимитный ордер размещён: {side} {qty} по цене {price}")
+                logger.info(
+                    f"Лимитный ордер размещён: {side} {qty} {symbol} по цене {price}"
+                )
                 return response["result"]["orderId"]
             else:
-                logger.error(f"Ошибка API при размещении лимитного ордера: {response['retMsg']}")
+                logger.error(
+                    f"Ошибка API при размещении лимитного ордера: {response['retMsg']}"
+                )
 
         except Exception as e:
-            logger.error(f"Ошибка API Bybit при размещении лимитного ордера: {e}", exc_info=True)
+            logger.error(
+                f"Ошибка API Bybit при размещении лимитного ордера: {e}", exc_info=True
+            )
 
-
-
-    def get_open_positions(self):
+    def get_open_positions(self, symbol):
         try:
             response = self.client.get_positions(
                 category=self.category,
-                symbol=self.symbol,
+                symbol=symbol,
             )
             if response["retCode"] == 0:
                 return [
@@ -145,25 +102,25 @@ class Bybit:
 
         return []
 
-    def set_stop_loss(self, side, entry_price):
+    def set_stop_loss(self, symbol, side, entry_price, price_decimals):
         if side == "Buy":
             stop_loss_price = round(
-                entry_price * (1 - self.stop_loss_pct / 100), self.price_decimals
+                entry_price * (1 - self.stop_loss_pct / 100), price_decimals
             )
         else:
             stop_loss_price = round(
-                entry_price * (1 + self.stop_loss_pct / 100), self.price_decimals
+                entry_price * (1 + self.stop_loss_pct / 100), price_decimals
             )
 
         try:
             response = self.client.set_trading_stop(
                 category=self.category,
-                symbol=self.symbol,
+                symbol=symbol,
                 stopLoss=str(stop_loss_price),
                 positionIdx=0,
             )
             if response["retCode"] == 0:
-                logger.info(f"Stop-loss успешно установлен: {stop_loss_price}")
+                logger.info(f"Stop-loss для {symbol} установлен: {stop_loss_price}")
             else:
                 logger.error(f"Ошибка установки Stop-loss: {response['retMsg']}")
         except Exception as e:
