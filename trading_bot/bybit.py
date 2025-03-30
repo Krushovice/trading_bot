@@ -12,7 +12,7 @@ class Bybit:
         logger.info(f"{os.getenv('NAME', 'Anon')} Bybit auth logged")
 
         self.category = "linear"
-        self.stop_loss_pct = float(os.getenv("STOP_LOSS_PERCENT", 3.0))
+        self.stop_loss_pct = 3.0
 
         self.params = dict(
             api_key=os.getenv("API_KEY"),
