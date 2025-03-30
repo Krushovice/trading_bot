@@ -8,75 +8,98 @@ logger = setup_logger(__name__)
 
 
 class Bot(Bybit):
-    def __init__(
-        self,
-        storage,
-    ):
+    def __init__(self, storage):
         super().__init__()
+        self.max_entries = int(os.getenv("MAX_ENTRIES", 1))
         self.storage = storage
-        self.max_entries = os.getenv("MAX_ENTRIES", 1)
 
-    def verify_position_with_exchange(self):
-        positions = self.get_open_positions()
+    def verify_position_with_exchange(self, symbol):
+        positions = self.get_open_positions(symbol)
         if positions:
             total_qty = sum(float(p["size"]) for p in positions)
             side = positions[0]["side"]
             entries = len(positions)
             self.storage.save_position(
-                self.symbol, {"side": side, "total_qty": total_qty, "entries": entries}
+                symbol, {"side": side, "total_qty": total_qty, "entries": entries}
             )
             logger.info("✅ Позиция синхронизирована с биржей")
         else:
-            self.storage.clear_position(self.symbol)
+            self.storage.clear_position(symbol)
             logger.info("⚠️ Нет открытых позиций на бирже, Redis очищен.")
 
-    def execute_trade(self, side, qty, limit_price):
-        position = self.storage.load_position(self.symbol)
+    def execute_trade(
+        self,
+        symbol,
+        side,
+        qty,
+        limit_price,
+    ):
+        # Получаем информацию о монете
+        instrument_info = self.get_instruments_info(symbol)
+        if instrument_info:
+            price_decimals, qty_decimals, min_qty = instrument_info
+        else:
+            logger.error(f"Не удалось получить данные инструмента {symbol}")
+            return
+
+        # Загружаем текущую позицию из Redis
+        position = self.storage.load_position(symbol)
         current_side = position.get("side")
         entries = position.get("entries", 0)
         total_qty = position.get("total_qty", 0)
 
+        if entries >= self.max_entries:
+            logger.warning(
+                f"🔔 Лимит ордеров ({self.max_entries}) для {symbol} уже достигнут."
+            )
+            return
+
+        qty = round(qty, qty_decimals)
+
         try:
             if side == "Buy":
                 if current_side == "Sell":
-                    self.place_order("Buy", total_qty, limit_price)
-                    self.storage.clear_position(self.symbol)
+                    self.place_order(symbol, "Buy", total_qty, limit_price)
+                    self.storage.clear_position(symbol)
                     entries, total_qty = 0, 0
-                    logger.info("🔄 Short → Long переворот")
+                    logger.info(f"🔄 Переворот Short → Long ({symbol})")
 
-                if entries < self.max_entries:
-                    order_id = self.place_order("Buy", qty, limit_price)
-                    if order_id:
-                        self.set_stop_loss("Buy", limit_price)
-                        self.storage.save_position(
-                            self.symbol,
-                            {
-                                "side": "Buy",
-                                "total_qty": total_qty + qty,
-                                "entries": entries + 1,
-                            },
-                        )
-                        logger.info("📈 Long ордер размещён")
+                order_id = self.place_order(symbol, "Buy", qty, limit_price)
+                if order_id:
+                    self.set_stop_loss(symbol, "Buy", limit_price, price_decimals)
+                    self.storage.save_position(
+                        symbol,
+                        {
+                            "side": "Buy",
+                            "total_qty": total_qty + qty,
+                            "entries": entries + 1,
+                        },
+                    )
+                    logger.info(
+                        f"📈 Long лимитный ордер {symbol}: {qty} по цене {limit_price}"
+                    )
 
             elif side == "Sell":
                 if current_side == "Buy":
-                    self.place_order("Sell", total_qty, limit_price)
-                    self.storage.clear_position(self.symbol)
+                    self.place_order(symbol, "Sell", total_qty, limit_price)
+                    self.storage.clear_position(symbol)
                     entries, total_qty = 0, 0
-                    logger.info("🔄 Long → Short переворот")
+                    logger.info(f"🔄 Переворот Long → Short ({symbol})")
 
-                if entries < self.max_entries:
-                    order_id = self.place_order("Sell", qty, limit_price)
-                    if order_id:
-                        self.set_stop_loss("Sell", limit_price)
-                        self.storage.save_position(
-                            self.symbol,
-                            {
-                                "side": "Sell",
-                                "total_qty": total_qty + qty,
-                                "entries": entries + 1,
-                            },
-                        )
-                        logger.info("📉 Short ордер размещён")
+                order_id = self.place_order(symbol, "Sell", qty, limit_price)
+                if order_id:
+                    self.set_stop_loss(symbol, "Sell", limit_price, price_decimals)
+                    self.storage.save_position(
+                        symbol,
+                        {
+                            "side": "Sell",
+                            "total_qty": total_qty + qty,
+                            "entries": entries + 1,
+                        },
+                    )
+                    logger.info(
+                        f"📉 Short лимитный ордер {symbol}: {qty} по цене {limit_price}"
+                    )
+
         except Exception as e:
-            logger.error(f"Ошибка торговли: {e}", exc_info=True)
+            logger.error(f"Ошибка исполнения ордера для {symbol}: {e}", exc_info=True)

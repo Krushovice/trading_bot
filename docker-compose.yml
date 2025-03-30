@@ -35,24 +35,15 @@ services:
 
   trading_bot:
     build: .
-    container_name: trading-bot
-    restart: always
+    container_name: trading_webhook_service
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
     depends_on:
       - redis
     environment:
       - API_KEY=${API_KEY}
       - API_SECRET=${API_SECRET}
-      - SYMBOL=${SYMBOL}
       - CATEGORY=${CATEGORY}
-      - QTY=${QTY}
-      - TIMEFRAME=${TIMEFRAME}
-      - LIMIT=${LIMIT}
       - STOP_LOSS_PERCENT=${STOP_LOSS_PERCENT}
-      - CAPITAL=${CAPITAL}
-      - FAST_EMA_LEN=${FAST_EMA_LEN}
-      - SLOW_EMA_LEN=${SLOW_EMA_LEN}
-      - SR_PERIOD=${SLOW_EMA_LEN}
-      - BUFFER_PCT=${BUFFER_PCT}
-      - ATR_PERIOD=${ATR_PERIOD}
-      - ATR_MULT=${ATR_MULT}
-      - VOL_SMA_PERIOD=${VOL_SMA_PERIOD}
+
