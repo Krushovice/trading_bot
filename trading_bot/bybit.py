@@ -73,7 +73,6 @@ class Bybit:
             logger.error(response["retMsg"])
         return pd.DataFrame()
 
-
     def get_instruments_info(self):
         try:
             response = self.client.get_instruments_info(
@@ -121,12 +120,14 @@ class Bybit:
                 logger.info(f"Лимитный ордер размещён: {side} {qty} по цене {price}")
                 return response["result"]["orderId"]
             else:
-                logger.error(f"Ошибка API при размещении лимитного ордера: {response['retMsg']}")
+                logger.error(
+                    f"Ошибка API при размещении лимитного ордера: {response['retMsg']}"
+                )
 
         except Exception as e:
-            logger.error(f"Ошибка API Bybit при размещении лимитного ордера: {e}", exc_info=True)
-
-
+            logger.error(
+                f"Ошибка API Bybit при размещении лимитного ордера: {e}", exc_info=True
+            )
 
     def get_open_positions(self):
         try:

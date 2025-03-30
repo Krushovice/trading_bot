@@ -5,6 +5,6 @@ __all__ = (
 )
 
 
-from .logger import setup_logger
+from utils.logger import setup_logger
 from .trade_logic import Bot
-from .api import Bybit
+from .bybit import Bybit
