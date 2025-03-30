@@ -37,10 +37,10 @@ services:
     build: .
     container_name: trading-bot
     restart: always
+    ports:
+      - "8000:8000"
     depends_on:
       - redis
     environment:
       - API_KEY=${API_KEY}
       - API_SECRET=${API_SECRET}
-      - STOP_LOSS_PERCENT=${STOP_LOSS_PERCENT}
-
