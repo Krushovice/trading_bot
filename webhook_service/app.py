@@ -1,34 +1,44 @@
-from contextlib import asynccontextmanager
-
-from fastapi import FastAPI, Request
-
+from fastapi import FastAPI, BackgroundTasks
+from trading_bot.schemas import TradingViewSignal
 from trading_bot.trade_logic import Bot
+
+from datetime import datetime, timezone
+
 from utils.logger import setup_logger
 from utils.storage import PositionStorage
 
+
 logger = setup_logger(__name__)
 
+app = FastAPI()
 
-@asynccontextmanager
-async def lifespan(_):
-    bot.verify_position_with_exchange()
-    yield
-
-
-app = FastAPI(lifespan=lifespan)
 storage = PositionStorage()
+
 bot = Bot(storage=storage)
 
 
 @app.post("/trading_webhook")
-async def webhook(request: Request):
-    data = await request.json()
-    side = data["side"]
-    symbol = data["symbol"]
-    limit_price = float(data["limit_price"])
-    qty = float(data["qty"])
+async def handle_webhook(
+    signal: TradingViewSignal,
+    background_tasks: BackgroundTasks,
+):
+    logger.info(f"🔔 Webhook получен: {signal}")
+    background_tasks.add_task(process_signal, signal)
+    background_tasks.add_task(bot.verify_position_with_exchange, signal.symbol)
+    return {"status": "received"}
 
-    logger.info(f"Webhook: {side} {symbol} qty: {qty} at price: {limit_price}")
-    res = bot.execute_trade(side, qty, limit_price)
 
-    return {"status": "ok"}
+def process_signal(signal: TradingViewSignal):
+
+    now = datetime.now(timezone.utc)
+    lag = (now - signal.trigger_time).total_seconds()
+    if lag > signal.max_lag:
+        logger.warning(f"Сигнал слишком старый (задержка {lag}s > {signal.max_lag}s).")
+        return
+
+    bot.execute_trade(
+        signal.symbol,
+        signal.side,
+        signal.qty,
+        signal.price,
+    )
