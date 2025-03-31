@@ -23,7 +23,14 @@ class Bot(Bybit):
             return
 
         price_decimals, qty_decimals, min_qty = instrument_info
+
         signal_qty = round(qty, qty_decimals)
+        if signal_qty < min_qty:
+            logger.warning(
+                f"Qty {signal_qty} is below Bybit's min_qty {min_qty}, adjusting to min_qty."
+            )
+            signal_qty = min_qty
+
         limit_price = round(limit_price, price_decimals)
 
         logger.info(
