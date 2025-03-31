@@ -34,7 +34,6 @@ class Bot(Bybit):
         qty,
         limit_price,
     ):
-        # Получаем информацию о монете
         instrument_info = self.get_instruments_info(symbol)
         if instrument_info:
             price_decimals, qty_decimals, min_qty = instrument_info
@@ -42,7 +41,6 @@ class Bot(Bybit):
             logger.error(f"Не удалось получить данные инструмента {symbol}")
             return
 
-        # Загружаем текущую позицию из Redis
         position = self.storage.load_position(symbol)
         current_side = position.get("side")
         entries = position.get("entries", 0)
@@ -59,14 +57,32 @@ class Bot(Bybit):
         try:
             if side == "Buy":
                 if current_side == "Sell":
-                    self.place_order(symbol, "Buy", total_qty, limit_price)
-                    self.storage.clear_position(symbol)
-                    entries, total_qty = 0, 0
-                    logger.info(f"🔄 Переворот Short → Long ({symbol})")
+                    close_order_id = self.place_order(
+                        symbol,
+                        "Buy",
+                        total_qty,
+                        limit_price,
+                    )
+                    if close_order_id:
+                        self.storage.clear_position(symbol)
+                        entries, total_qty = 0, 0
+                        logger.info(
+                            f"🔄 Переворот Short → Long ({symbol}) по цене {limit_price}"
+                        )
 
-                order_id = self.place_order(symbol, "Buy", qty, limit_price)
+                order_id = self.place_order(
+                    symbol,
+                    "Buy",
+                    qty,
+                    limit_price,
+                )
                 if order_id:
-                    self.set_stop_loss(symbol, "Buy", limit_price, price_decimals)
+                    self.set_stop_loss(
+                        symbol,
+                        "Buy",
+                        limit_price,
+                        price_decimals,
+                    )
                     self.storage.save_position(
                         symbol,
                         {
@@ -81,14 +97,32 @@ class Bot(Bybit):
 
             elif side == "Sell":
                 if current_side == "Buy":
-                    self.place_order(symbol, "Sell", total_qty, limit_price)
-                    self.storage.clear_position(symbol)
-                    entries, total_qty = 0, 0
-                    logger.info(f"🔄 Переворот Long → Short ({symbol})")
+                    close_order_id = self.place_order(
+                        symbol,
+                        "Sell",
+                        total_qty,
+                        limit_price,
+                    )
+                    if close_order_id:
+                        self.storage.clear_position(symbol)
+                        entries, total_qty = 0, 0
+                        logger.info(
+                            f"🔄 Переворот Long → Short ({symbol}) по цене {limit_price}"
+                        )
 
-                order_id = self.place_order(symbol, "Sell", qty, limit_price)
+                order_id = self.place_order(
+                    symbol,
+                    "Sell",
+                    qty,
+                    limit_price,
+                )
                 if order_id:
-                    self.set_stop_loss(symbol, "Sell", limit_price, price_decimals)
+                    self.set_stop_loss(
+                        symbol,
+                        "Sell",
+                        limit_price,
+                        price_decimals,
+                    )
                     self.storage.save_position(
                         symbol,
                         {
@@ -102,4 +136,7 @@ class Bot(Bybit):
                     )
 
         except Exception as e:
-            logger.error(f"Ошибка исполнения ордера для {symbol}: {e}", exc_info=True)
+            logger.error(
+                f"Ошибка исполнения ордера для {symbol}: {e}",
+                exc_info=True,
+            )

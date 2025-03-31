@@ -102,7 +102,13 @@ class Bybit:
 
         return []
 
-    def set_stop_loss(self, symbol, side, entry_price, price_decimals):
+    def set_stop_loss(
+        self,
+        symbol,
+        side,
+        entry_price,
+        price_decimals,
+    ):
         if side == "Buy":
             stop_loss_price = round(
                 entry_price * (1 - self.stop_loss_pct / 100), price_decimals
