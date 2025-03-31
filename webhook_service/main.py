@@ -14,7 +14,7 @@ app = FastAPI()
 
 storage = PositionStorage()
 
-bot = Bot(storage=storage)
+bot = Bot()
 
 
 @app.post("/trading_webhook")
