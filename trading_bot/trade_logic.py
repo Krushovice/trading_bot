@@ -8,156 +8,102 @@ logger = setup_logger(__name__)
 
 
 class Bot(Bybit):
-    def __init__(self, storage):
+    def __init__(self):
         super().__init__()
-        self.max_entries = int(os.getenv("MAX_ENTRIES", 1))
-        self.storage = storage
+        # Логика: максимум сколько раз можно войти (например, 2)
+        self.max_entries = int(os.getenv("MAX_ENTRIES", "1"))
 
-    def verify_position_with_exchange(self, symbol):
-        positions = self.get_open_positions(symbol)
-        redis_position = self.storage.load_position(symbol)
+    def execute_trade(self, symbol, side, qty, limit_price):
+        """
+        Сигнал от TradingView: пытаемся открыть (или перевернуть) позицию.
+        - Смотрим, есть ли уже открытая позиция на Bybit
+        - Если side не совпадает, сначала закрываем
+        - Если не превышен max_entries, открываем новую позицию
+        """
 
-        if positions:
-            total_qty = sum(float(p["size"]) for p in positions)
-            side = positions[0]["side"]
-            entries = len(positions)
-
-            # Обновляем Redis, только если есть расхождения
-            if (
-                redis_position.get("total_qty") != total_qty
-                or redis_position.get("side") != side
-            ):
-                self.storage.save_position(
-                    symbol, {"side": side, "total_qty": total_qty, "entries": entries}
-                )
-                logger.info("✅ Позиция синхронизирована с биржей.")
-            else:
-                logger.info("✅ Позиция уже синхронизирована. Нет изменений.")
-
-        else:
-            # Очищаем Redis только если там были данные
-            if redis_position:
-                self.storage.clear_position(symbol)
-                logger.info("⚠️ Нет открытых позиций на бирже, Redis очищен.")
-            else:
-                logger.info("ℹ️ Нет открытых позиций на бирже и в Redis.")
-
-    def execute_trade(
-        self,
-        symbol,
-        side,
-        qty,
-        limit_price,
-    ):
+        # Сначала получаем точность цены/объёма
         instrument_info = self.get_instruments_info(symbol)
-        if instrument_info:
-            price_decimals, qty_decimals, min_qty = instrument_info
-        else:
-            logger.error(f"Не удалось получить данные инструмента {symbol}")
+        if not instrument_info:
+            logger.error(f"Не удалось получить instrument info для {symbol}")
             return
 
-        position = self.storage.load_position(symbol)
-        current_side = position.get("side")
-        entries = position.get("entries", 0)
-        total_qty = position.get("total_qty", 0)
+        price_decimals, qty_decimals, min_qty = instrument_info
+
+        # Округляем входящие данные
+        signal_qty = round(qty, qty_decimals)
+        limit_price = round(limit_price, price_decimals)
 
         logger.info(
-            f"🔍 Проверка позиции: "
-            f"current_side={current_side}, "
-            f"entries={entries}, "
-            f"max_entries={self.max_entries}"
+            f"🚀 Сигнал: "
+            f"{symbol} side={side}, "
+            f"qty={signal_qty}, "
+            f"price={limit_price}"
         )
 
-        if entries >= self.max_entries:
+        # Смотрим, есть ли открытая позиция у Bybit
+        positions = self.get_open_positions(symbol)
+        current_side = None
+        current_qty = 0.0
+
+        if positions:
+            # Предполагаем, что у Bybit одна активная позиция по символу + направлению
+            current_side = positions[0]["side"]  # "Buy" or "Sell"
+            current_qty = sum(float(p["size"]) for p in positions)
+
+        # Для упрощения считаем, что если есть позиция, entries=1, иначе=0
+        entries = 1 if current_side else 0
+        logger.info(
+            f"🔍 Текущая позиция на бирже: side={current_side}, qty={current_qty}, entries={entries}"
+        )
+
+        if entries >= self.max_entries and current_side == side:
             logger.warning(
-                f"🔔 Лимит ордеров ({self.max_entries}) для {symbol} уже достигнут."
+                f"🔔 Достигнут лимит ордеров ({self.max_entries}) для {symbol}."
             )
             return
 
-        signal_qty = round(qty, qty_decimals)
-
-        try:
-            if side == "Buy":
-                if current_side == "Sell" and total_qty > 0:
-                    close_order_id = self.place_order(
-                        symbol,
-                        "Buy",
-                        total_qty,  # Используем qty из Redis только для закрытия!
-                        limit_price,
-                    )
-                    if close_order_id:
-                        self.storage.clear_position(symbol)
-                        entries, total_qty = 0, 0
-                        logger.info(
-                            f"🔄 Переворот Short → Long ({symbol}) по цене {limit_price}"
-                        )
-
-                # Новый лимитный ордер по сигналу
-                order_id = self.place_order(
-                    symbol,
-                    "Buy",
-                    signal_qty,  # Используем только данные сигнала TradingView
-                    limit_price,
+        # Если приходит сигнал "Buy", а уже есть позиция "Sell" → переворот
+        if side == "Buy" and current_side == "Sell":
+            close_order_id = self.place_order(
+                symbol,
+                "Buy",
+                current_qty,
+                limit_price,
+            )
+            if close_order_id:
+                logger.info(
+                    f"🔄 Переворот Short → Long ({symbol}). Закрыли позицию qty={current_qty}"
                 )
-                if order_id:
-                    self.set_stop_loss(
-                        symbol,
-                        "Buy",
-                        limit_price,
-                        price_decimals,
-                    )
-                    self.storage.save_position(
-                        symbol,
-                        {
-                            "side": "Buy",
-                            "total_qty": total_qty + signal_qty,
-                            "entries": entries + 1,
-                        },
-                    )
-                    logger.info(
-                        f"📈 Long лимитный ордер {symbol}: {signal_qty} по цене {limit_price}"
-                    )
+            else:
+                logger.error(f"❌ Не удалось закрыть позицию {symbol}")
+                return  # Прерываем, так как переворот не состоялся
 
-            elif side == "Sell":
-                if current_side == "Buy" and total_qty > 0:
-                    close_order_id = self.place_order(
-                        symbol,
-                        "Sell",
-                        total_qty,  # Используем qty из Redis только для закрытия!
-                        limit_price,
-                    )
-                    if close_order_id:
-                        self.storage.clear_position(symbol)
-                        entries, total_qty = 0, 0
-                        logger.info(
-                            f"🔄 Переворот Long → Short ({symbol}) по цене {limit_price}"
-                        )
+            current_side = None
+            current_qty = 0.0
+            entries = 0
 
-                # Новый лимитный ордер по сигналу
-                order_id = self.place_order(
-                    symbol,
-                    "Sell",
-                    signal_qty,  # Используем только данные сигнала TradingView
-                    limit_price,
+        # Аналогично, если приходит сигнал "Sell", а уже есть позиция "Buy"
+        if side == "Sell" and current_side == "Buy":
+            close_order_id = self.place_order(symbol, "Sell", current_qty, limit_price)
+            if close_order_id:
+                logger.info(
+                    f"🔄 Переворот Long → Short ({symbol}). Закрыли позицию qty={current_qty}"
                 )
-                if order_id:
-                    self.set_stop_loss(
-                        symbol,
-                        "Sell",
-                        limit_price,
-                        price_decimals,
-                    )
-                    self.storage.save_position(
-                        symbol,
-                        {
-                            "side": "Sell",
-                            "total_qty": total_qty + signal_qty,
-                            "entries": entries + 1,
-                        },
-                    )
-                    logger.info(
-                        f"📉 Short лимитный ордер {symbol}: {signal_qty} по цене {limit_price}"
-                    )
+            else:
+                logger.error(f"❌ Не удалось закрыть позицию {symbol}")
+                return
 
-        except Exception as e:
-            logger.error(f"Ошибка исполнения ордера для {symbol}: {e}", exc_info=True)
+            current_side = None
+            current_qty = 0.0
+            entries = 0
+
+        # Теперь, если всё ок, открываем новую позицию (лимитный ордер)
+        order_id = self.place_order(symbol, side, signal_qty, limit_price)
+        if order_id:
+            # Ставим стоп-лосс
+            self.set_stop_loss(symbol, side, limit_price, price_decimals)
+            logger.info(
+                f"📈 Открыт ордер {symbol} {side} qty={signal_qty} по цене={limit_price}"
+            )
+        else:
+            logger.warning(f"⚠️ Не удалось открыть новую позицию {symbol} {side}.")

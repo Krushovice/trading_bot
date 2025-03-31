@@ -42,4 +42,4 @@ def process_signal(signal: TradingViewSignal):
         signal.price,
     )
     # После исполнения сделки обновляем позиции:
-    bot.verify_position_with_exchange(signal.symbol)
+    # bot.verify_position_with_exchange(signal.symbol)

@@ -1,6 +1,8 @@
 import os
+from typing import Any
 
 from pybit.unified_trading import HTTP
+from requests import Response
 
 from . import setup_logger
 
@@ -27,7 +29,10 @@ class Bybit:
         except Exception as e:
             logger.error(e)
 
-    def get_instruments_info(self, symbol):
+    def get_instruments_info(
+        self,
+        symbol: str,
+    ) -> tuple | None:
         try:
             response = self.client.get_instruments_info(
                 symbol=symbol,
@@ -59,12 +64,18 @@ class Bybit:
         except Exception as e:
             logger.error(e)
 
-    def place_order(self, symbol, side, qty, price):
+    def place_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        price: float,
+    ) -> Any | None:
         try:
             response = self.client.place_order(
                 category=self.category,
                 symbol=symbol,
-                side=side,
+                side=side.capitalize(),
                 orderType="Limit",
                 qty=str(qty),
                 price=str(price),
@@ -85,7 +96,7 @@ class Bybit:
                 f"Ошибка API Bybit при размещении лимитного ордера: {e}", exc_info=True
             )
 
-    def get_open_positions(self, symbol):
+    def get_open_positions(self, symbol: str) -> list[Any]:
         try:
             response = self.client.get_positions(
                 category=self.category,
@@ -104,11 +115,11 @@ class Bybit:
 
     def set_stop_loss(
         self,
-        symbol,
-        side,
-        entry_price,
-        price_decimals,
-    ):
+        symbol: str,
+        side: str,
+        entry_price: float,
+        price_decimals: int,
+    ) -> None:
         if side == "Buy":
             stop_loss_price = round(
                 entry_price * (1 - self.stop_loss_pct / 100), price_decimals
