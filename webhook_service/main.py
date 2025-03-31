@@ -24,7 +24,6 @@ async def handle_webhook(
 ):
     logger.info(f"🔔 Webhook получен: {signal}")
     background_tasks.add_task(process_signal, signal)
-    background_tasks.add_task(bot.verify_position_with_exchange, signal.symbol)
     return {"status": "received"}
 
 
@@ -42,3 +41,5 @@ def process_signal(signal: TradingViewSignal):
         signal.qty,
         signal.price,
     )
+    # После исполнения сделки обновляем позиции:
+    bot.verify_position_with_exchange(signal.symbol)
