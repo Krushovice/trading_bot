@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import FastAPI, BackgroundTasks
 from trading_bot.schemas import TradingViewSignal
 from trading_bot.trade_logic import Bot
@@ -23,23 +25,36 @@ async def handle_webhook(
     background_tasks: BackgroundTasks,
 ):
     logger.info(f"🔔 Webhook получен: {signal}")
-    background_tasks.add_task(process_signal, signal)
-    return {"status": "received"}
+
+    # Сначала исполним торговую логику:
+    order_id = process_signal(signal)
+
+    # Если order_id не None и side = 'Limit',
+    # добавляем фоновую задачу, чтобы дождаться исполнения и поставить SL
+    if order_id:
+        # Допустим, нам нужны symbol и side, limit_price,
+        # их тоже вернём из process_signal
+        background_tasks.add_task(
+            bot.wait_for_fill_and_set_sl,
+            order_id,
+            signal,
+        )
+
+    return {"status": "ok"}
 
 
-def process_signal(signal: TradingViewSignal):
-
+def process_signal(signal: TradingViewSignal) -> Optional[str]:
     now = datetime.now(timezone.utc)
     lag = (now - signal.trigger_time).total_seconds()
     if lag > signal.max_lag:
         logger.warning(f"Сигнал слишком старый (задержка {lag}s > {signal.max_lag}s).")
-        return
+        return None
 
-    bot.execute_trade(
+    # execute_trade возвращает order_id лимитного ордера (или None)
+    order_id = bot.execute_trade(
         signal.symbol,
         signal.side,
         signal.qty,
         signal.price,
     )
-    # После исполнения сделки обновляем позиции:
-    # bot.verify_position_with_exchange(signal.symbol)
+    return order_id
