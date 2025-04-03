@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Any
 
 from pybit.unified_trading import HTTP
@@ -80,6 +81,7 @@ class Bybit:
                 qty=str(qty),
                 price=str(price),
                 timeInForce="PostOnly",
+                stopLoss="3",
             )
             if response["retCode"] == 0:
                 logger.info(
@@ -142,3 +144,26 @@ class Bybit:
                 logger.error(f"Ошибка установки Stop-loss: {response['retMsg']}")
         except Exception as e:
             logger.error(e)
+
+    def get_order_status(
+        self,
+        order_id: int,
+        symbol: str,
+    ):
+        """
+        Запрашиваем статус ордера у Bybit
+        """
+        # Пример
+        response = self.client.get_open_orders(
+            category="linear",
+            symbol=symbol,
+            orderId=order_id,
+        )
+        if response["retCode"] == 0 and response["result"]:
+            order_data = response["result"]["list"][0]
+            return order_data.get(
+                "orderStatus"
+            )  # 'Filled', 'New', 'PartiallyFilled', ...
+        else:
+            logger.error(f"Ошибка получения статуса: {response.get('retMsg')}")
+            return None
