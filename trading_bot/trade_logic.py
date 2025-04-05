@@ -51,7 +51,7 @@ class Bot(Bybit):
         signal_qty = round(qty, instruments["qty_decimals"])
         if signal_qty < instruments["min_qty"]:
             logger.warning(
-                f"Qty {signal_qty} < min_qty {instruments["min_qty"]}, увеличиваем до min_qty."
+                f"Qty {signal_qty} < min_qty {instruments['min_qty']}, увеличиваем до min_qty."
             )
             signal_qty = instruments["min_qty"]
 
