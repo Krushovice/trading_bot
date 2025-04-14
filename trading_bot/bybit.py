@@ -81,7 +81,6 @@ class Bybit:
                 qty=str(qty),
                 price=str(price),
                 timeInForce="PostOnly",
-                stopLoss="3",
             )
             if response["retCode"] == 0:
                 logger.info(
