@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from utils.logger import setup_logger
 from utils.storage import PositionStorage
-
+from utils.normalize import normalize_symbol
 
 logger = setup_logger(__name__)
 
@@ -49,10 +49,11 @@ def process_signal(signal: TradingViewSignal) -> Optional[str]:
     if lag > signal.max_lag:
         logger.warning(f"Сигнал слишком старый (задержка {lag}s > {signal.max_lag}s).")
         return None
-
+    # конвертируем название символа в валидное для апи
+    symbol = normalize_symbol(signal.symbol)
     # execute_trade возвращает order_id лимитного ордера (или None)
     order_id = bot.execute_trade(
-        signal.symbol,
+        symbol,
         signal.side,
         signal.qty,
         signal.price,
