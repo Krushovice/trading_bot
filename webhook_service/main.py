@@ -1,6 +1,8 @@
+import os
+
 from typing import Optional
 
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, HTTPException
 from trading_bot.schemas import TradingViewSignal
 from trading_bot.trade_logic import Bot
 
@@ -18,6 +20,7 @@ storage = PositionStorage()
 
 bot = Bot()
 
+SECRET_KEY = os.getenv("MY_SECRET_KEY")
 
 @app.post("/trading_webhook")
 async def handle_webhook(
@@ -26,6 +29,8 @@ async def handle_webhook(
 ):
     logger.info(f"🔔 Webhook получен: {signal}")
 
+    if signal.secret != SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden: Invalid secret")
     # Сначала исполним торговую логику:
     order_id = process_signal(signal)
 
