@@ -4,6 +4,7 @@ from datetime import datetime
 
 
 class TradingViewSignal(BaseModel):
+    secret: str
     symbol: str
     side: str
     qty: float
