@@ -57,10 +57,13 @@ def process_signal(signal: TradingViewSignal) -> Optional[str]:
     # конвертируем название символа в валидное для апи
     symbol = normalize_symbol(signal.symbol)
     # execute_trade возвращает order_id лимитного ордера (или None)
-    order_id = bot.execute_trade(
-        symbol,
-        signal.side,
-        signal.qty,
-        signal.price,
-    )
-    return order_id
+    # получаем актуальную цену
+    price = bot.get_last_price(symbol=symbol) - 0.1
+    if price:
+    	order_id = bot.execute_trade(
+            symbol,
+            signal.side,
+            signal.qty,
+            price,
+        )
+        return order_id
