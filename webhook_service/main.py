@@ -60,7 +60,7 @@ def process_signal(signal: TradingViewSignal) -> Optional[str]:
     # получаем актуальную цену
     price = bot.get_last_price(symbol=symbol) - 0.1
     if price:
-    	order_id = bot.execute_trade(
+        order_id = bot.execute_trade(
             symbol,
             signal.side,
             signal.qty,

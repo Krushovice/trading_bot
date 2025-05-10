@@ -166,3 +166,11 @@ class Bybit:
         else:
             logger.error(f"Ошибка получения статуса: {response.get('retMsg')}")
             return None
+
+    def get_last_price(self, symbol: str) -> float | None:
+       try:
+           tick = self.client.get_tickers(category="linear", symbol=symbol)
+           last_price = float(tick['result']['list'][0]['lastPrice'])
+       except Exception as e:
+           logger.error(f"Ошибка получения тиккера {e}")
+           return None
