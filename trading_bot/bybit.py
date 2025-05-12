@@ -169,8 +169,7 @@ class Bybit:
 
     def get_last_price(self, symbol: str) -> float | None:
        try:
-           tick = self.client.get_tickers(category="linear", symbol=symbol)
-           last_price = float(tick['result']['list'][0]['lastPrice'])
+           last_price = self.client.get_tickers(category="linear", symbol=symbol)
            return last_price
        except Exception as e:
            logger.error(f"Ошибка получения тиккера {e}")

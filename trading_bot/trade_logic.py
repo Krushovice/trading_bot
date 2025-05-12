@@ -1,5 +1,7 @@
 import os
 import time
+import math
+
 from typing import Union, Any, Optional
 
 from dotenv import load_dotenv
@@ -48,12 +50,12 @@ class Bot(Bybit):
         instruments = self.prepare_instruments(symbol)
 
         # Округляем qty и price
-        signal_qty = round(qty, instruments["qty_decimals"])
+        signal_qty = math.floor(qty * 10**instruments["qty_decimals"]) / 10**instruments["qty_decimals"]
         if signal_qty < instruments["min_qty"]:
             logger.warning(
                 f"Qty {signal_qty} < min_qty {instruments['min_qty']}, увеличиваем до min_qty."
             )
-            signal_qty = instruments["min_qty"]
+            signal_qty = round(instruments["min_qty"], instruments["qty_decimals"])
 
         adj_price = round(limit_price, instruments["price_decimals"])
         return signal_qty, adj_price
