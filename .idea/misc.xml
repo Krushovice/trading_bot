@@ -3,7 +3,9 @@
   <component name="Black">
     <option name="enabledOnReformat" value="true" />
     <option name="enabledOnSave" value="true" />
-    <option name="sdkName" value="Python 3.12 (bybit_trading_bot)" />
+    <option name="executionMode" value="BINARY" />
+    <option name="pathToExecutable" value="\\wsl.localhost\Debian\home\krusha\.local\bin\black" />
+    <option name="sdkName" value="Python 3.13.1 WSL (Debian): (/home/krusha/projects/trading_bot/venv/bin/python)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (bybit_trading_bot)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.13.1 WSL (Debian): (/home/krusha/projects/trading_bot/venv/bin/python)" project-jdk-type="Python SDK" />
 </project>
