@@ -7,7 +7,7 @@ readme = "README.md"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = "^3.13.1"
+python = "^3.11"
 python-dotenv = "^1.0.1"
 pybit = "^5.8.0"
 redis = "^5.2.1"
