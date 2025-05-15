@@ -62,8 +62,10 @@ class Bybit:
                 return float(symbols[0]["ask1Price"])
             else:
                 logger.error(response["retMsg"])
+                return None
         except Exception as e:
             logger.error(e)
+            return None
 
     def place_order(
         self,
@@ -91,11 +93,13 @@ class Bybit:
                 logger.error(
                     f"Ошибка API при размещении лимитного ордера: {response['retMsg']}"
                 )
+                return None
 
         except Exception as e:
             logger.error(
                 f"Ошибка API Bybit при размещении лимитного ордера: {e}", exc_info=True
             )
+            return None
 
     def get_open_positions(self, symbol: str) -> list[Any]:
         try:

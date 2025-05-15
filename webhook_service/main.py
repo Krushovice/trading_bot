@@ -2,7 +2,13 @@ import os
 
 from typing import Optional
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import (
+    FastAPI,
+    BackgroundTasks,
+    HTTPException,
+    Request,
+    Response,
+)
 from trading_bot.schemas import TradingViewSignal
 from trading_bot.trade_logic import Bot
 
@@ -21,6 +27,13 @@ storage = PositionStorage()
 bot = Bot()
 
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
+
+
+@app.middleware("http")
+async def reject_all_requests(request: Request, call_next):
+    if request.url.path == "/":
+        return Response(status_code=403)
+    return await call_next(request)
 
 
 @app.post("/trading_webhook")
@@ -52,7 +65,7 @@ async def handle_webhook(
 def process_signal(signal: TradingViewSignal) -> Optional[str]:
     now = datetime.now(timezone.utc)
     lag = (now - signal.trigger_time).total_seconds()
-    if lag > signal.max_lag:
+    if lag > 30:
         logger.warning(f"Сигнал слишком старый (задержка {lag}s > {signal.max_lag}s).")
         return None
     # конвертируем название символа в валидное для апи
