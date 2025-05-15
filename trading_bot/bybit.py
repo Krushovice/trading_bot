@@ -175,7 +175,7 @@ class Bybit:
             )
             if res["retCode"] == 0:
                 last_price = res["result"]["list"][0]["lastPrice"]
-                return last_price
+                return float(last_price)
             else:
                 logger.error(res["retMsg"])
                 return None

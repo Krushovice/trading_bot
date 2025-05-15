@@ -22,6 +22,7 @@ bot = Bot()
 
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
 
+
 @app.post("/trading_webhook")
 async def handle_webhook(
     signal: TradingViewSignal,
@@ -68,3 +69,4 @@ def process_signal(signal: TradingViewSignal) -> Optional[str]:
             price,
         )
         return order_id
+    return None
