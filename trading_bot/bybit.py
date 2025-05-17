@@ -1,11 +1,9 @@
 import os
-import time
+
 from typing import Any
 
 from pybit.unified_trading import HTTP
-from requests import Response
-
-from . import setup_logger
+from utils import setup_logger
 
 logger = setup_logger(__name__)
 

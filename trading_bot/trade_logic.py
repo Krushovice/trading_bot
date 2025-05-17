@@ -1,15 +1,13 @@
 import os
 import time
-import math
 
-from typing import Union, Any, Optional
-
+from typing import Optional
 from dotenv import load_dotenv
 
 from .bybit import Bybit
-
-from utils.logger import setup_logger
+from utils import setup_logger, align_to_step
 from .schemas import TradingViewSignal
+
 
 logger = setup_logger(__name__)
 
@@ -26,39 +24,48 @@ class Bot(Bybit):
         self.current_qty = 0.0  # текущий объём
 
     def prepare_instruments(self, symbol: str) -> dict | None:
-        instrument_info = self.get_instruments_info(symbol)
-        if not instrument_info:
-            logger.error(f"Не удалось получить инструменты для {symbol}")
-            return None  # Возвращаем None
-
-        price_decimals, qty_decimals, min_qty = instrument_info
+        info = self.get_instruments_info(symbol)
+        if not info:
+            return None
+        price_dec, qty_dec, min_qty = info
+        # добираем шаги
+        inst_raw = self.client.get_instruments_info(symbol=symbol, category="linear")
+        filters = inst_raw["result"]["list"][0]
+        tick_size = float(filters["priceFilter"]["tickSize"])
+        qty_step = float(filters["lotSizeFilter"]["qtyStep"])
         return {
-            "price_decimals": price_decimals,
-            "qty_decimals": qty_decimals,
+            "price_decimals": price_dec,
+            "qty_decimals": qty_dec,
             "min_qty": min_qty,
+            "tick_size": tick_size,
+            "qty_step": qty_step,
         }
 
     def prepare_trade_params(
         self,
         symbol: str,
+        side: str,  # ← направление!
         qty: float,
         limit_price: float,
-    ) -> tuple[Optional[float], Optional[float]]:
-        """
-        Возвращает (signal_qty, adj_price) или (None, None) если ошибка.
-        """
-        instruments = self.prepare_instruments(symbol)
+    ) -> tuple[float, float] | tuple[None, None]:
+        inst = self.prepare_instruments(symbol)
+        if not inst:
+            return None, None
 
-        # Округляем qty и price
-        signal_qty = math.floor(qty * 10**instruments["qty_decimals"]) / 10**instruments["qty_decimals"]
-        if signal_qty < instruments["min_qty"]:
-            logger.warning(
-                f"Qty {signal_qty} < min_qty {instruments['min_qty']}, увеличиваем до min_qty."
-            )
-            signal_qty = round(instruments["min_qty"], instruments["qty_decimals"])
+        # qty → кратно qty_step и ≥ min_qty
+        qty = align_to_step(qty, inst["qty_step"])
+        if qty < inst["min_qty"]:
+            qty = inst["min_qty"]
 
-        adj_price = round(limit_price, instruments["price_decimals"])
-        return signal_qty, adj_price
+        # price → кратно tick_size
+        round_down = side.lower() == "buy"  # Buy → вниз, Sell → вверх
+        price = align_to_step(
+            limit_price,
+            inst["tick_size"],
+            round_down=round_down,
+        )
+
+        return qty, price
 
     def sync_position_with_bybit(self, symbol: str) -> None:
         """
@@ -224,12 +231,13 @@ class Bot(Bybit):
         limit_price: float,
     ) -> Optional[str]:
         # 1) готовим qty и price
-        signal_qty, adj_price = self.prepare_trade_params(
+        qty_aligned, price_aligned = self.prepare_trade_params(
             symbol,
+            side,
             qty,
             limit_price,
         )
-        if not signal_qty:
+        if qty_aligned is None:
             return None
 
         # 2) синхронизируем текущее состояние
@@ -239,7 +247,7 @@ class Bot(Bybit):
         if not self.handle_reversal_if_needed(
             symbol,
             side,
-            adj_price,
+            price_aligned,
         ):
             return None
 
@@ -251,8 +259,8 @@ class Bot(Bybit):
         order_id = self.place_and_update(
             symbol,
             side,
-            signal_qty,
-            adj_price,
+            qty_aligned,
+            price_aligned,
         )
         return order_id
 
