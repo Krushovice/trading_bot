@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 
 from typing import Optional
 
@@ -12,11 +13,13 @@ from fastapi import (
 from trading_bot.schemas import TradingViewSignal
 from trading_bot.trade_logic import Bot
 
-from datetime import datetime, timezone
 
-from utils.logger import setup_logger
-from utils.storage import PositionStorage
-from utils.normalize import normalize_symbol
+from utils import (
+    setup_logger,
+    PositionStorage,
+    normalize_symbol,
+)
+
 
 logger = setup_logger(__name__)
 
@@ -44,7 +47,10 @@ async def handle_webhook(
     logger.info(f"🔔 Webhook получен: {signal}")
 
     if signal.secret != SECRET_KEY:
-        raise HTTPException(status_code=403, detail="Forbidden: Invalid secret")
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: Invalid secret",
+        )
     # Сначала исполним торговую логику:
     order_id = process_signal(signal)
 
@@ -68,18 +74,17 @@ def process_signal(signal: TradingViewSignal) -> Optional[str]:
     if lag > 30:
         logger.warning(f"Сигнал слишком старый (задержка {lag}s > {signal.max_lag}s).")
         return None
+
     # конвертируем название символа в валидное для апи
     symbol = normalize_symbol(signal.symbol)
+
     # execute_trade возвращает order_id лимитного ордера (или None)
-    # получаем актуальную цену
-    current_price = bot.get_last_price(symbol=symbol)
-    if current_price:
-        price = current_price - 0.1
-        order_id = bot.execute_trade(
-            symbol,
-            signal.side,
-            signal.qty,
-            price,
-        )
+    order_id = bot.execute_trade(
+        symbol,
+        signal.side,
+        signal.qty,
+        signal.price,
+    )
+    if order_id:
         return order_id
     return None
