@@ -5,7 +5,7 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from .bybit import Bybit
-from utils import setup_logger, align_to_step
+from utils import setup_logger, align_to_step, normalize_symbol
 from .schemas import TradingViewSignal
 
 
@@ -29,7 +29,10 @@ class Bot(Bybit):
             return None
         price_dec, qty_dec, min_qty = info
         # добираем шаги
-        inst_raw = self.client.get_instruments_info(symbol=symbol, category="linear")
+        inst_raw = self.client.get_instruments_info(
+            symbol=symbol,
+            category="linear",
+        )
         filters = inst_raw["result"]["list"][0]
         tick_size = float(filters["priceFilter"]["tickSize"])
         qty_step = float(filters["lotSizeFilter"]["qtyStep"])
@@ -278,21 +281,21 @@ class Bot(Bybit):
         filled = False
         max_attempts = 100  # сколько раз проверять (или ставим таймаут по времени)
         attempt = 0
-
-        instruments = self.prepare_instruments(signal.symbol)
+        symbol = normalize_symbol(signal.symbol)
+        instruments = self.prepare_instruments(symbol)
 
         while not filled and attempt < max_attempts:
             time.sleep(15)  # каждые 15 секунд
             order_status = self.get_order_status(
                 order_id=order_id,
-                symbol=signal.symbol,
+                symbol=symbol,
             )
 
             # order_status может быть 'Filled', 'PartiallyFilled', 'Cancelled', ...
             if order_status == "Filled":
                 logger.info(f"Ордер {order_id} исполнен! Ставим стоп-лосс.")
                 self.set_stop_loss(
-                    symbol=signal.symbol,
+                    symbol=symbol,
                     side=signal.side,
                     entry_price=signal.price,
                     price_decimals=instruments["price_decimals"],
