@@ -3,7 +3,7 @@ import os
 from typing import Any
 
 from pybit.unified_trading import HTTP
-from utils import setup_logger
+from utils import setup_logger, normalize_symbol
 
 logger = setup_logger(__name__)
 
@@ -24,9 +24,10 @@ class Bybit:
 
     def check_permissions(self):
         try:
-            self.client.get_wallet_balance()
+            return self.client.get_wallet_balance(accountType="UNIFIED")
         except Exception as e:
             logger.error(e)
+            return None
 
     def get_instruments_info(
         self,
@@ -131,7 +132,7 @@ class Bybit:
             stop_loss_price = round(
                 entry_price * (1 + self.stop_loss_pct / 100), price_decimals
             )
-
+        symbol = normalize_symbol(symbol)
         try:
             response = self.client.set_trading_stop(
                 category=self.category,
