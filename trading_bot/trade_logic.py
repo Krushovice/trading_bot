@@ -196,14 +196,7 @@ class Bot(Bybit):
             price=price,
         )
         if order_id:
-            instruments = self.prepare_instruments(symbol)
 
-            self.set_stop_loss(
-                symbol=symbol,
-                side=side,
-                entry_price=price,
-                price_decimals=instruments["price_decimals"],
-            )
             logger.info(f"✅ Открыли {side} {qty} {symbol} по {price}")
 
             # Обновляем локальные переменные
