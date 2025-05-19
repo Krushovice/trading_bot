@@ -3,7 +3,7 @@ import os
 from typing import Any
 
 from pybit.unified_trading import HTTP
-from utils import setup_logger, normalize_symbol
+from utils import setup_logger, normalize_symbol, align_to_step
 
 logger = setup_logger(__name__)
 
@@ -122,40 +122,58 @@ class Bybit:
         symbol: str,
         side: str,
         entry_price: float,
-        price_decimals: int,
+        instruments: dict,
     ) -> None:
-        if side == "Buy":
-            stop_loss_price = round(
-                entry_price * (1 - self.stop_loss_pct / 100), price_decimals
+        """
+        Считает SL для Buy/Sell, выравнивает по tick_size,
+        берёт текущую цену как basePrice и ставит через set_trading_stop.
+        """
+        # 1) Получаем параметры инструмента
+
+        tick_size = instruments["tick_size"]
+
+        # 2) Считаем «сырую» цену SL и выравниваем
+        if side.lower() == "buy":
+            raw_sl = entry_price * (1 - self.stop_loss_pct / 100)
+            aligned_sl = align_to_step(
+                raw_sl,
+                tick_size,
+                round_down=True,
             )
         else:
-            stop_loss_price = round(
-                entry_price * (1 + self.stop_loss_pct / 100), price_decimals
+            raw_sl = entry_price * (1 + self.stop_loss_pct / 100)
+            aligned_sl = align_to_step(
+                raw_sl,
+                tick_size,
+                round_down=False,
             )
-        symbol = normalize_symbol(symbol)
-        try:
-            response = self.client.set_trading_stop(
-                category=self.category,
-                symbol=symbol,
-                stopLoss=str(stop_loss_price),
-                positionIdx=0,
-            )
-            if response["retCode"] == 0:
-                logger.info(f"Stop-loss для {symbol} установлен: {stop_loss_price}")
-            else:
-                logger.error(f"Ошибка установки Stop-loss: {response['retMsg']}")
-        except Exception as e:
-            logger.error(e)
+
+        # 3) Берём текущую цену для basePrice
+        base_price = self.get_last_price(symbol)
+
+        # 4) Выставляем SL
+        resp = self.client.set_trading_stop(
+            category=self.category,
+            symbol=symbol,
+            stopLoss=str(aligned_sl),
+            positionIdx=0,
+            basePrice=str(base_price),
+            stopLossTriggerType="LastPrice",  # или "MarkPrice" по желанию
+        )
+
+        if resp.get("retCode") == 0:
+            logger.info(f"Stop-loss для {symbol} установлен: {aligned_sl}")
+        else:
+            logger.error(f"Ошибка установки SL: {resp.get('retMsg')}")
 
     def get_order_status(
         self,
-        order_id: int,
+        order_id: str | int,
         symbol: str,
     ):
         """
         Запрашиваем статус ордера у Bybit
         """
-        # Пример
         response = self.client.get_open_orders(
             category="linear",
             symbol=symbol,

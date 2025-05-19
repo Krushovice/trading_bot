@@ -269,42 +269,32 @@ class Bot(Bybit):
 
     def wait_for_fill_and_set_sl(
         self,
-        order_id: int | str,
+        order_id: str,
         signal: TradingViewSignal,
     ):
         """
-        Фоновая задача:
-        1) Ждём, пока лимитный ордер исполнится
-        2) Ставим стоп-лосс
+        1) Ждём, пока лимитник исполнится (status == "Filled")
+        2) Вызываем set_stop_loss (там уже весь расчёт)
         """
-
-        filled = False
-        max_attempts = 100  # сколько раз проверять (или ставим таймаут по времени)
-        attempt = 0
         symbol = normalize_symbol(signal.symbol)
-        instruments = self.prepare_instruments(symbol)
-
-        while not filled and attempt < max_attempts:
-            time.sleep(15)  # каждые 15 секунд
-            order_status = self.get_order_status(
+        inst = self.prepare_instruments(symbol)
+        for _ in range(100):
+            status = self.get_order_status(
                 order_id=order_id,
                 symbol=symbol,
             )
-
-            # order_status может быть 'Filled', 'PartiallyFilled', 'Cancelled', ...
-            if order_status == "Filled":
-                logger.info(f"Ордер {order_id} исполнен! Ставим стоп-лосс.")
+            if status == "Filled":
+                logger.info(f"Ордер {order_id} исполнен, ставим SL")
                 self.set_stop_loss(
                     symbol=symbol,
                     side=signal.side,
                     entry_price=signal.price,
-                    price_decimals=instruments["price_decimals"],
+                    instruments=inst,
                 )
-                filled = True
-            elif order_status in ["Cancelled", "Rejected"]:
-                logger.warning(f"Ордер {order_id} отменён / отклонён, SL не ставим.")
-                break
-            attempt += 1
+                return
+            if status in ("Cancelled", "Rejected"):
+                logger.warning(f"Ордер {order_id} отменён/отклонён, SL не ставим")
+                return
+            time.sleep(5)
 
-        if not filled:
-            logger.warning(f"Ордер {order_id} не исполнился за время ожидания.")
+        logger.warning(f"Ордер {order_id} не исполнился за отведённое время")
