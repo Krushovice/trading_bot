@@ -1,36 +1,29 @@
 from datetime import datetime, timezone
-
 from typing import Optional
 
 from fastapi import (
-    FastAPI,
     BackgroundTasks,
+    Depends,
+    FastAPI,
     Request,
     Response,
-    Depends,
 )
-
-
 from fastapi.middleware import Middleware
-
-
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-
 from trading_bot.schemas import TradingViewSignal
 from trading_bot.trade_logic import Bot
-
-
 from utils import (
-    setup_logger,
     PositionStorage,
     normalize_symbol,
+    setup_logger,
 )
 
 from .app_utils import validate_secret
+
 
 logger = setup_logger(__name__)
 
@@ -109,7 +102,7 @@ async def handle_webhook(
 def process_signal(signal: TradingViewSignal) -> Optional[str]:
     now = datetime.now(timezone.utc)
     lag = (now - signal.trigger_time).total_seconds()
-    if lag > 30:
+    if lag > signal.max_lag:
         logger.warning(f"Сигнал слишком старый (задержка {lag}s > {signal.max_lag}s).")
         return None
 
