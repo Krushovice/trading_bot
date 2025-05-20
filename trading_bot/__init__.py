@@ -6,5 +6,6 @@ __all__ = (
 
 
 from utils.logger import setup_logger
-from .trade_logic import Bot
+
 from .bybit import Bybit
+from .trade_logic import Bot

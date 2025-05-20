@@ -166,4 +166,4 @@ class Bybit:
         else:
             logger.error(f"Ошибка получения статуса: {response.get('retMsg')}")
             return None
-    def 
+    def

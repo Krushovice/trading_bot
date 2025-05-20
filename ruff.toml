@@ -31,6 +31,7 @@ exclude = [
 src = [
     "trading_bot",
     "webhook_service",
+    "utils"
 ]
 
 # Same as Black.
@@ -98,6 +99,7 @@ docstring-code-line-length = "dynamic"
 known-first-party = [
     "trading_bot",
     "webhook_service",
+    "utils",
 ]
 
 force-sort-within-sections = true
