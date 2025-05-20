@@ -1,9 +1,9 @@
+import json
 import os
 
-import redis
-import json
-
 from dotenv import load_dotenv
+import redis
+
 
 load_dotenv()
 
@@ -17,7 +17,7 @@ class PositionStorage:
             port=int(os.getenv("REDIS_PORT")),
             username=os.getenv("REDIS_USER"),
             password=os.getenv("REDIS_USER_PASSWORD"),
-            db=int(os.getenv("REDIS_DB", 0)),
+            db=int(os.getenv("REDIS_DB", "0")),
             decode_responses=True,
         )
 
