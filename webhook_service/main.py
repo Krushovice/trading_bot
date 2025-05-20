@@ -1,4 +1,3 @@
-import os
 from datetime import datetime, timezone
 
 from typing import Optional
@@ -6,10 +5,21 @@ from typing import Optional
 from fastapi import (
     FastAPI,
     BackgroundTasks,
-    HTTPException,
     Request,
     Response,
+    Depends,
 )
+
+
+from fastapi.middleware import Middleware
+
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
+
+
 from trading_bot.schemas import TradingViewSignal
 from trading_bot.trade_logic import Bot
 
@@ -20,45 +30,73 @@ from utils import (
     normalize_symbol,
 )
 
+from .app_utils import validate_secret
 
 logger = setup_logger(__name__)
 
-app = FastAPI()
+middleware = [
+    Middleware(SlowAPIMiddleware),  # type: ignore[attr-defined]
+]
+app = FastAPI(
+    middleware=middleware,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+
 
 storage = PositionStorage()
 
 bot = Bot()
 
-SECRET_KEY = os.getenv("MY_SECRET_KEY")
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter  # type: ignore[attr-defined]
+
+app.add_exception_handler(
+    exc_class_or_status_code=RateLimitExceeded,
+    handler=_rate_limit_exceeded_handler,  # type: ignore[attr-defined]
+)
 
 
 @app.middleware("http")
-async def reject_all_requests(request: Request, call_next):
-    if request.url.path == "/":
-        return Response(status_code=403)
+async def only_webhook_middleware(
+    request: Request,
+    call_next,
+):
+    if request.url.path != "/trading_webhook":
+        return Response(status_code=404)
     return await call_next(request)
 
 
-@app.post("/trading_webhook")
+@app.post(
+    "/trading_webhook",
+    dependencies=[
+        Depends(validate_secret),
+        Depends(limiter.limit("10/minute")),  # по IP
+        Depends(
+            limiter.limit(
+                "30/minute",
+                key_func=lambda req: "global",
+            )
+        ),  # глобально
+    ],
+)
 async def handle_webhook(
     signal: TradingViewSignal,
     background_tasks: BackgroundTasks,
 ):
-    logger.info(f"🔔 Webhook получен: {signal}")
+    logger.info(
+        f"🔔 Webhook: {signal.symbol=} {signal.side=}",
+        f"{signal.qty=} {signal.price=}",
+    )
 
-    if signal.secret != SECRET_KEY:
-        raise HTTPException(
-            status_code=403,
-            detail="Forbidden: Invalid secret",
-        )
     # Сначала исполним торговую логику:
     order_id = process_signal(signal)
 
     # Если order_id не None и side = 'Limit',
-    # добавляем фоновую задачу, чтобы дождаться исполнения и поставить SL
     if order_id:
-        # Допустим, нам нужны symbol и side, limit_price,
-        # их тоже вернём из process_signal
+        # добавляем фоновую задачу, чтобы дождаться исполнения и поставить SL
         background_tasks.add_task(
             bot.wait_for_fill_and_set_sl,
             order_id,
