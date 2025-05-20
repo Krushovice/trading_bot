@@ -1,9 +1,10 @@
 import os
-
 from typing import Any
 
 from pybit.unified_trading import HTTP
-from utils import setup_logger, normalize_symbol, align_to_step
+
+from utils import align_to_step, setup_logger
+
 
 logger = setup_logger(__name__)
 
