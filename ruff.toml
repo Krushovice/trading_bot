@@ -54,7 +54,7 @@ select = [
     "PL",
     "RUF",
 ]
-ignore = []
+ignore = ["RUF001", "RUF002", "RUF003"]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = [

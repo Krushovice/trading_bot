@@ -1,11 +1,12 @@
 import os
 import time
-
 from typing import Optional
+
 from dotenv import load_dotenv
 
+from utils import align_to_step, normalize_symbol, setup_logger
+
 from .bybit import Bybit
-from utils import setup_logger, align_to_step, normalize_symbol
 from .schemas import TradingViewSignal
 
 
@@ -57,8 +58,7 @@ class Bot(Bybit):
 
         # qty → кратно qty_step и ≥ min_qty
         qty = align_to_step(qty, inst["qty_step"])
-        if qty < inst["min_qty"]:
-            qty = inst["min_qty"]
+        qty = max(qty, inst["min_qty"])
 
         # price → кратно tick_size
         round_down = side.lower() == "buy"  # Buy → вниз, Sell → вверх
@@ -80,9 +80,7 @@ class Bot(Bybit):
             bybit_side = positions[0]["side"]  # 'Buy' / 'Sell'
             bybit_qty = float(positions[0]["size"])
             logger.info(
-                f"🗄 Биржа: "
-                f"есть позиция side={bybit_side}, "
-                f"qty={bybit_qty} {symbol}"
+                f"🗄 Биржа: есть позиция side={bybit_side}, qty={bybit_qty} {symbol}"
             )
         else:
             bybit_side = None
@@ -126,8 +124,7 @@ class Bot(Bybit):
             )
             if close_order_id:
                 logger.info(
-                    f"🔄 Переворот Short → Long. "
-                    f"Закрыли {self.current_qty} {symbol}"
+                    f"🔄 Переворот Short → Long. Закрыли {self.current_qty} {symbol}"
                 )
                 self.current_side = None
                 self.current_qty = 0
@@ -149,8 +146,7 @@ class Bot(Bybit):
             )
             if close_order_id:
                 logger.info(
-                    f"🔄 Переворот Long → Short. "
-                    f"Закрыли {self.current_qty} {symbol}"
+                    f"🔄 Переворот Long → Short. Закрыли {self.current_qty} {symbol}"
                 )
                 self.current_side = None
                 self.current_qty = 0
@@ -196,7 +192,6 @@ class Bot(Bybit):
             price=price,
         )
         if order_id:
-
             logger.info(f"✅ Открыли {side} {qty} {symbol} по {price}")
 
             # Обновляем локальные переменные
