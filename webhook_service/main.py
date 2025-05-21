@@ -1,29 +1,33 @@
 from datetime import datetime, timezone
+import os
 from typing import Optional
 
+from dotenv import load_dotenv
 from fastapi import (
     BackgroundTasks,
-    Depends,
     FastAPI,
     Request,
     Response,
 )
+from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware import Middleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
+from starlette.responses import JSONResponse
 
 from trading_bot.schemas import TradingViewSignal
 from trading_bot.trade_logic import Bot
 from utils import (
-    PositionStorage,
     normalize_symbol,
     setup_logger,
 )
 
-from .app_utils import validate_secret
 
+load_dotenv()
+
+SECRET_KEY = os.getenv("MY_SECRET_KEY")
 
 logger = setup_logger(__name__)
 
@@ -38,7 +42,16 @@ app = FastAPI(
 )
 
 
-storage = PositionStorage()
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    logger.error("❌ Validation failed for %s: %s", request.url.path, exc.errors())
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+    )
+
+
+# storage = PositionStorage()
 
 bot = Bot()
 
@@ -62,27 +75,20 @@ async def only_webhook_middleware(
     return await call_next(request)
 
 
-@app.post(
-    "/trading_webhook",
-    dependencies=[
-        Depends(validate_secret),
-        Depends(limiter.limit("10/minute")),  # по IP
-        Depends(
-            limiter.limit(
-                "30/minute",
-                key_func=lambda req: "global",
-            )
-        ),  # глобально
-    ],
-)
+@app.post("/trading_webhook")
+@limiter.limit("10/minute")
 async def handle_webhook(
+    request: Request,
     signal: TradingViewSignal,
     background_tasks: BackgroundTasks,
 ):
     logger.info(
-        f"🔔 Webhook: {signal.symbol=} {signal.side=}",
-        f"{signal.qty=} {signal.price=}",
+        f"🔔 Webhook получен: symbol={signal.symbol}, side={signal.side}, "
+        f"qty={signal.qty}, price={signal.price}"
     )
+
+    if signal.secret != SECRET_KEY:
+        raise HTTPException(status_code=401, detail="Invalid secret")
 
     # Сначала исполним торговую логику:
     order_id = process_signal(signal)
