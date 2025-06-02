@@ -5,11 +5,12 @@ import os
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware import Middleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
-from starlette.responses import JSONResponse
 
 from trading_bot.schemas import TradingViewSignal
 from trading_bot.trade_logic import Bot
@@ -23,8 +24,10 @@ logger = setup_logger(__name__)
 # Rate-limiter: до 10 вызовов / минуту
 limiter = Limiter(key_func=get_remote_address)
 
+# Передаём SlowAPIMiddleware через класс Middleware
+middleware = [Middleware(SlowAPIMiddleware)]
 app = FastAPI(
-    middleware=[{"middleware_class": SlowAPIMiddleware}],
+    middleware=middleware,
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
