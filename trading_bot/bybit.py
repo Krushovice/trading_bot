@@ -14,7 +14,6 @@ class Bybit:
     def __init__(self):
         logger.info("Bybit: авторизация выполнена")
         self.category = "linear"
-        # Процент стоп-лосса (можно менять через ENV)
         self.stop_loss_pct = float(os.getenv("STOP_LOSS_PCT", "3.0"))  # 3%
 
         self.client = HTTP(
