@@ -1,16 +1,18 @@
 # schemas.py
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, constr
+from pydantic import BaseModel, Field
 
 
 class TradingViewSignal(BaseModel):
     secret: str
     symbol: str
-    side: Annotated[str, constr(min_length=3, max_length=4)]
+    side: Literal["buy", "sell"]
     qty: Annotated[float, Field(ge=0.01, lt=1.0)]
-    price: float
+    price: Annotated[float, Field(ge=1.0)]
     trigger_time: datetime
     max_lag: int
     strategy_id: str
+
+    model_config = {"extra": "forbid"}
