@@ -11,15 +11,18 @@ logger = setup_logger(__name__)
 
 
 class Bybit:
-    def __init__(self):
+    def __init__(self, use_testnet: bool = False):
         logger.info("Bybit: авторизация выполнена")
         self.category = "linear"
         self.stop_loss_pct = float(os.getenv("STOP_LOSS_PCT", "3.0"))  # 3%
 
         self.client = HTTP(
-            api_key=os.getenv("API_KEY"),
-            api_secret=os.getenv("API_SECRET"),
+            api_key=os.getenv("TEST_API_KEY") if use_testnet else os.getenv("API_KEY"),
+            api_secret=(
+                os.getenv("TEST_API_SECRET") if use_testnet else os.getenv("API_KEY")
+            ),
             timeout=30,
+            testnet=use_testnet,
         )
 
     def get_instruments_info(
