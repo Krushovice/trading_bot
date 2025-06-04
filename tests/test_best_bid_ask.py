@@ -1,6 +1,6 @@
 import pytest
 
-from fixtures.bybit_data import bybit
+from tests.conftest import bybit
 
 
 def test_get_best_bid_ask_success(bybit, monkeypatch):
