@@ -1,4 +1,3 @@
-# app.py
 from datetime import datetime, timezone
 import os
 
@@ -36,8 +35,15 @@ app.state.limiter = limiter  # ignore
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error("❌ Validation failed: %s → %s", request.url.path, exc.errors())
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+):
+    logger.error(
+        "❌ Validation failed: %s → %s",
+        request.url.path,
+        exc.errors(),
+    )
     return JSONResponse(
         status_code=422,
         content={"detail": exc.errors()},
@@ -45,7 +51,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 @app.exception_handler(RateLimitExceeded)
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+async def rate_limit_handler(
+    request: Request,
+    exc: RateLimitExceeded,
+):
     return JSONResponse(
         status_code=429,
         content={"detail": "Too Many Requests"},
@@ -53,7 +62,10 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 
 @app.middleware("http")
-async def only_webhook_middleware(request: Request, call_next):
+async def only_webhook_middleware(
+    request: Request,
+    call_next,
+):
     if request.url.path != "/trading_webhook":
         return Response(status_code=404)
     return await call_next(request)
@@ -71,7 +83,10 @@ async def handle_webhook(
 ):
     # Проверка секрета из TradingView
     if signal.secret != SECRET_KEY:
-        raise HTTPException(status_code=401, detail="Invalid secret")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid secret",
+        )
 
     logger.info(
         "🔔 Webhook от TradingView: symbol=%s, side=%s, qty=%s, price=%s",
@@ -100,15 +115,15 @@ async def handle_webhook(
         symbol=symbol,
         side=signal.side,
         qty=signal.qty,
-        limit_price=signal.price,
     )
 
     if order_id:
         # Фоновая задача будет ждать исполнения и ставить SL
         background_tasks.add_task(
             bot.wait_for_fill_and_set_sl,
-            order_id,
-            signal,
+            order_id=order_id,
+            symbol=signal.symbol,
+            side=signal.side,
         )
 
     return {"status": "ok"}
