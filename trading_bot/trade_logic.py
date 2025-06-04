@@ -2,10 +2,9 @@
 import time
 from typing import Optional
 
-from utils import align_to_step, normalize_symbol, setup_logger
+from utils import align_to_step, setup_logger
 
 from .bybit import Bybit
-from .schemas import TradingViewSignal
 
 
 logger = setup_logger(__name__)
@@ -22,47 +21,104 @@ class Bot(Bybit):
         side: str,
         qty: float,
         price: float,
+        base_price: float,
     ) -> Optional[tuple[float, float, float]]:
         """
-        Достаём фильтры инструмента и приводим qty/price к шагам:
-          возвращаем (qty_aligned, price_aligned, tick_size) или None.
+        1) Запрашиваем фильтры инструмента (min_qty, tick_size, qty_step).
+        2) Выравниваем qty к шагу (и сравниваем с min_qty).
+        3) Выравниваем limit_price к шагу tick_size с учётом того, чтобы остаться мейкером.
+        4) Если цена пересекает стакан (best_bid/best_ask), двигаем на 1 тик.
+        Возвращаем (qty_aligned, price_aligned, tick_size) или None.
         """
         inst = self.get_instruments_info(symbol)
         if inst is None:
             return None
 
-        min_qty, tick_size, qty_step, _ = inst
+        # 2.a) Выравниваем qty под шаг и минимум
+        qty_aligned = max(
+            align_to_step(
+                value=qty,
+                step=inst["qty_step"],
+                round_down=True,
+            ),
+            inst["min_qty"],
+        )
 
-        # Количество ≥ min_qty и кратно qty_step
-        qty_aligned = max(align_to_step(qty, qty_step), min_qty)
-
-        # Цена: кратна tick_size
+        # 2.b) Выравниваем price (limit_price) под tick_size
+        #      Для buy — округляем вниз, для sell — вверх
         round_down = side.lower() == "buy"
         price_aligned = align_to_step(
-            price,
-            tick_size,
+            value=price,
+            step=inst["tick_size"],
             round_down=round_down,
         )
 
-        return qty_aligned, price_aligned, tick_size
+        # 3) Корректируем цену, чтобы остаться мейкером: смотрим текущие best_bid/best_ask
+        best = self.get_best_bid_ask(symbol)
+        if not best:
+            return None
+        best_bid, best_ask = best
+
+        if side.lower() == "buy":
+            # Если выровненная цена выше или равна лучшему аску — сдвигаем вниз
+            if price_aligned >= best_ask:
+                adjusted = best_ask - inst["tick_size"]
+                price_aligned = align_to_step(
+                    value=adjusted,
+                    step=inst["tick_size"],
+                    round_down=True,
+                )
+                logger.info(
+                    "▶ Buy align: заявленная %.8f пересекла best_ask %.8f → "
+                    "сдвигаем на %.8f → price=%.8f",
+                    price,
+                    best_ask,
+                    inst["tick_size"],
+                    price_aligned,
+                )
+
+        # Если выровненная цена ниже или равна лучшему биду — сдвигаем вверх
+        elif price_aligned <= best_bid:
+            adjusted = best_bid + inst["tick_size"]
+            price_aligned = align_to_step(
+                value=adjusted,
+                step=inst["tick_size"],
+                round_down=False,
+            )
+            logger.info(
+                "▶ Sell align: заявленная %.8f пересекла best_bid %.8f → "
+                "сдвигаем на %.8f → price=%.8f",
+                price,
+                best_bid,
+                inst["tick_size"],
+                price_aligned,
+            )
+
+        # 4) Возвращаем готовые величины: qty_aligned, price_aligned, tick_size
+        return qty_aligned, price_aligned, inst["tick_size"]
 
     def execute_trade(
         self,
         symbol: str,
         side: str,
         qty: float,
-        limit_price: float,
     ) -> Optional[str]:
         """
         1) Приводим qty и price к шагам
         2) Отправляем лимитный ордер
         3) Возвращаем order_id для фона (SL)
         """
+        current_price = self.get_last_price(symbol=symbol)
+        if current_price is None:
+            logger.error(
+                "Не удалось получить текущую цену для %s, прерываем trade", symbol
+            )
+            return None
         aligned = self._align_order(
-            symbol,
-            side,
-            qty,
-            limit_price,
+            symbol=symbol,
+            side=side,
+            qty=qty,
+            price=current_price,
         )
         if aligned is None:
             return None
@@ -81,54 +137,77 @@ class Bot(Bybit):
         # Передаём в фоновую задачу: symbol, side, entry_price=price_aligned, tick_size
         return order_id
 
+    import time
+
     def wait_for_fill_and_set_sl(
         self,
         order_id: str,
-        signal: TradingViewSignal,
+        symbol: str,
+        side: str,
     ):
         """
-        Ждём исполнения лимитного ордера (до 100 попыток, pause=5s).
-        Если статус "Filled" → ставим SL, где basePrice = entry_price (из сигнала).
+        1) Проверяем статус ордера максимум 25 раз с паузой ~5 секунд.
+        2) Если статус стал "Filled" → вызываем set_stop_loss(symbol, side, instruments).
+        3) Если за 25 итераций ордер не заполнен → отменяем его через API.
         """
-        symbol = normalize_symbol(signal.symbol)
 
-        # Получаем entry_price из сигнала (он там же, где limit_price)
-        entry_price = signal.price
-
-        # Узнаём tick_size (чтобы посчитать SL). Можно повторно вызвать get_instruments_info:
+        # Подготовка: получаем тот же словарь instruments, что и в _align_order
         inst = self.get_instruments_info(symbol)
-        if not inst:
+        if inst is None:
+            logger.error("Не удалось получить фильтры инструмента для SL")
             return
-        _, tick_size, _, _ = inst
 
-        for _ in range(100):
+        max_checks = 25
+        sleep_seconds = 5
+
+        for i in range(max_checks):
             status = self.get_order_status(
-                symbol=symbol,
                 order_id=order_id,
+                symbol=symbol,
             )
             if status == "Filled":
                 logger.info(
                     "Ордер %s исполнен → выставляем SL",
                     order_id,
                 )
+                # Ставим стоп-лосс, передав instruments (там есть tick_size)
                 self.set_stop_loss(
                     symbol=symbol,
-                    side=signal.side,
-                    entry_price=entry_price,
-                    tick_size=tick_size,
+                    side=side,
+                    instruments=inst,
                 )
                 return
-
             if status in ("Cancelled", "Rejected"):
                 logger.warning(
-                    "Ордер %s отменён/отклонён → SL не ставим",
+                    "Ордер %s отменён/отклонён, SL не ставим",
                     order_id,
                 )
                 return
 
-            time.sleep(5)
+            time.sleep(sleep_seconds)
 
-        logger.warning(
-            "Ордер %s не успел исполниться за ограниченное время",
-            order_id,
-        )
+        # Если вышли из цикла, значит ордер всё ещё не исполнился → надо отменить
+        try:
+            cancel_resp = self.client.cancel_order(
+                category=self.category,
+                symbol=symbol,
+                orderId=order_id,
+            )
+            if cancel_resp.get("retCode") == 0:
+                logger.info(
+                    "Ордер %s не исполнился за %s попыток → отменён",
+                    order_id,
+                    max_checks,
+                )
+            else:
+                logger.error(
+                    "Ошибка отмены ордера %s: %s",
+                    order_id,
+                    cancel_resp.get("retMsg"),
+                )
+        except Exception as e:
+            logger.error(
+                "Bybit cancel_order exception: %s",
+                e,
+                exc_info=True,
+            )
