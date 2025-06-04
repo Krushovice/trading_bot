@@ -1,4 +1,3 @@
-# trading_bot/trade_logic.py
 import time
 from typing import Optional
 
