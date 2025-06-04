@@ -13,7 +13,7 @@ class DummyClient:
         raise RuntimeError("unmocked!")
 
 
-@pytest.fixture
+@pytest.fixture(scope="package")
 def bybit(monkeypatch):
     b = Bybit(use_testnet=True)
 
