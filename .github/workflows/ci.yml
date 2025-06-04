@@ -29,8 +29,8 @@ jobs:
 
       - name: Run ruff
         run: |
-          ruff check
+          poetry run ruff .
 
       - name: Run pytest
         run: |
-          pytest -q --disable-warnings --maxfail=1
+          poetry run pytest -q --disable-warnings --maxfail=1
