@@ -33,4 +33,4 @@ jobs:
 
       - name: Run pytest
         run: |
-          pytest -v -rA --showlocals --disable-warnings --maxfail=1
+          poetry run pytest -v -rA --showlocals --disable-warnings --maxfail=1
