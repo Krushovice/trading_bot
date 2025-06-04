@@ -27,9 +27,9 @@ jobs:
           python -m pip install poetry
           poetry install
 
-      - name: Run ruff (exclude tests/)
+      - name: Run ruff
         run: |
-          ruff . --exclude tests
+          ruff check
 
       - name: Run pytest
         run: |
