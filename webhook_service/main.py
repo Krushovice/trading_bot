@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 import os
+import traceback
 
+from alarm_bot.bot import alert_app
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -14,6 +16,7 @@ from slowapi.util import get_remote_address
 from trading_bot.schemas import TradingViewSignal
 from trading_bot.trade_logic import Bot
 from utils import normalize_symbol, setup_logger
+from webhook_service.app_utils import alert_telegram_admins
 
 
 load_dotenv()
@@ -32,6 +35,8 @@ app = FastAPI(
     openapi_url=None,
 )
 app.state.limiter = limiter  # ignore
+
+app.mount("/alert", alert_app)
 
 
 @app.exception_handler(RequestValidationError)
@@ -58,6 +63,39 @@ async def rate_limit_handler(
     return JSONResponse(
         status_code=429,
         content={"detail": "Too Many Requests"},
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # Полный traceback
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    lines = tb.splitlines()
+    short_tb = "\n".join(lines[:30])  # первые 30 строк
+
+    # Краткое сообщение для телеги
+    error_message = (
+        f"🚨 <b>UNHANDLED ERROR</b>\n"
+        f"🔗 <b>URL:</b> {request.url}\n\n"
+        f"<pre>{short_tb}</pre>"
+    )
+
+    # Лог в файл
+    logger.critical(
+        "🔥 Unhandled exception at %s\n%s",
+        request.url,
+        tb,
+    )
+
+    # Телега (внутри alert_telegram_admins есть защита и лог)
+    try:
+        await alert_telegram_admins(error_message)
+    except Exception as e:
+        logger.error("⚠️ Failed to alert Telegram: %s", e)
+
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
     )
 
 
