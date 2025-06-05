@@ -14,15 +14,48 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
+from fastapi import FastAPI, HTTPException, Request
 
 from utils.logger import setup_logger
 
 
-BASE_DIR = Path(__file__).resolve().parent
-
 logger = setup_logger(__name__)
 
+BASE_DIR = Path(__file__).resolve().parent
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
+SECRET_KEY = os.getenv("MY_SECRET_KEY")
+
 dp = Dispatcher()
+
+bot = Bot(
+    token=os.getenv(
+        "BOT_TOKEN",
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    ),
+)
+alert_app = FastAPI()
+
+
+@alert_app.post("/alert-critical")
+async def alert_critical(request: Request):
+    data = await request.json()
+    if data.get("key") != SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    error_text = data.get("error")
+    if not error_text:
+        raise HTTPException(
+            status_code=400,
+            detail="No error message provided",
+        )
+
+    await bot.send_message(
+        chat_id=ADMIN_ID,
+        text=f"🚨 <b>Критическая ошибка в FastAPI:</b>\n<pre>{error_text}</pre>",
+        parse_mode="HTML",
+    )
+
+    return {"status": "ok"}
 
 
 def get_logs_kb() -> InlineKeyboardMarkup:
@@ -51,7 +84,7 @@ def load_logs():
 
 
 def check_for_admin(tg_id: int) -> bool:
-    if tg_id == int(os.getenv("ADMIN_ID")):
+    if tg_id == ADMIN_ID:
         return True
     return False
 
@@ -89,12 +122,6 @@ async def handle_back_button(call: CallbackQuery) -> None:
 
 
 async def main() -> None:
-    bot = Bot(
-        token=os.getenv(
-            "BOT_TOKEN",
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-        ),
-    )
     try:
         await dp.start_polling(bot)
     except KeyboardInterrupt:
