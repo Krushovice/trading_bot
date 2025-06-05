@@ -100,11 +100,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 @app.middleware("http")
-async def only_webhook_middleware(
-    request: Request,
-    call_next,
-):
-    if request.url.path != "/trading_webhook":
+async def only_webhook_middleware(request: Request, call_next):
+    allowed_paths = {"/trading_webhook", "/alert/alert-critical"}
+    if request.url.path not in allowed_paths:
         return Response(status_code=404)
     return await call_next(request)
 
