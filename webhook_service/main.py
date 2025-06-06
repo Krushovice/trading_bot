@@ -27,7 +27,6 @@ from .setup_app import setup_app
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
 ALERT_PATH = os.getenv("ALERT_PATH")
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
 TRADE_PATH = os.getenv("TRADE_PATH")
 BOT_PREFIX = os.getenv("BOT_PREFIX")
 
@@ -121,7 +120,7 @@ async def only_webhook_middleware(
     request: Request,
     call_next,
 ):
-    bot_webhook_path = f"{BOT_PREFIX}{WEBHOOK_PATH}/{BOT_TOKEN}"
+    bot_webhook_path = f"{BOT_PREFIX}{WEBHOOK_PATH}"
     alert_path = f"{BOT_PREFIX}{ALERT_PATH}"
     allowed_paths = {TRADE_PATH, bot_webhook_path, alert_path}
 

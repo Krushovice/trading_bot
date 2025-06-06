@@ -13,7 +13,7 @@ from aiogram.types import (
     Message,
     Update,
 )
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from utils.logger import setup_logger
@@ -29,9 +29,9 @@ BASE_DIR = Path(__file__).resolve().parent
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_PREFIX = os.getenv("BOT_PREFIX")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST_URL")
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
-BOT_PREFIX = os.getenv("BOT_PREFIX")
 ALERT_PATH = os.getenv("ALERT_PATH")
 
 
@@ -45,7 +45,7 @@ bot = Bot(
 )
 
 bot_app = FastAPI(
-    prefix=os.getenv("BOT_PREFIX"),
+    prefix=BOT_PREFIX,
 )
 
 
@@ -54,8 +54,17 @@ async def root():
     return {"message": "FastAPI + Aiogram (webhook) запущены"}
 
 
-@bot_app.post(f"{WEBHOOK_PATH}/{BOT_TOKEN}")
-async def telegram_webhook(request: Request):
+@bot_app.post(f"{BOT_PREFIX}{WEBHOOK_PATH}")
+async def telegram_webhook(
+    request: Request,
+    x_telegram_bot_api_secret_token: str = Header(None),
+):
+    # Проверяем, что переданный X-Telegram-Bot-Api-Secret-Token совпадает с HOOK_SECRET
+    if x_telegram_bot_api_secret_token != os.getenv("HOOK_SECRET"):
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden",
+        )
     data = await request.json()
     update = Update.model_validate(data, context={"bot": bot})
     try:
