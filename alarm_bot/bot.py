@@ -81,7 +81,7 @@ async def root():
 @bot_app.post(f"{WEBHOOK_PATH}/{BOT_TOKEN}")
 async def telegram_webhook(request: Request):
     data = await request.json()
-    update = Update(**data)
+    update = Update.model_validate(data, context={"bot": bot})
     try:
         await dp.feed_update(
             bot=bot,
