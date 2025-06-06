@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 
