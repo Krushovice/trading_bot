@@ -100,8 +100,9 @@ docstring-code-line-length = "dynamic"
 [lint.isort]
 
 known-first-party = [
-    "trading_bot",
+    "trade_service",
     "webhook_service",
+    "alarm_bot",
     "utils",
 ]
 
@@ -115,4 +116,5 @@ known-third-party = [
     "pybit",
     "slowapi",
     "redis",
+    "aiogram",
 ]
