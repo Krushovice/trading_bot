@@ -48,10 +48,10 @@ async def lifespan(app: FastAPI):
     webhook_path = f"/webhook/{BOT_TOKEN}"
     webhook_url = WEBHOOK_HOST.rstrip("/") + webhook_path
     try:
-        await bot.set_webhook(webhook_url)
-        logger.info(f"Webhook установлен: {webhook_url}")
+        result = await bot.set_webhook(webhook_url)
+        logger.info(f"set_webhook response: {result}")
     except Exception as e:
-        logger.error("Не удалось установить webhook: %s", e)
+        logger.error(f"Failed to set webhook to {webhook_url}: {e}")
     yield
 
     # При остановке alert_app очищаем webhook
