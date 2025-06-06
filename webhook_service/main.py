@@ -131,7 +131,7 @@ async def only_webhook_middleware(
 
 
 @app.post(TRADE_PATH)
-@app.state.limiter("10/minute")
+@limiter.limit("10/minute")
 async def handle_webhook(
     request: Request,
     signal: TradingViewSignal,
