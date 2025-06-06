@@ -4,7 +4,13 @@ import traceback
 
 from alarm_bot.bot import alert_app
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware import Middleware
 from fastapi.responses import JSONResponse
@@ -14,13 +20,19 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
 from trading_bot.schemas import TradingViewSignal
-from trading_bot.trade_logic import Bot
+from trading_bot.trade_logic import TradeService
 from utils import normalize_symbol, setup_logger
 from webhook_service.app_utils import alert_telegram_admins
 
+from .lifespan import lifespan
+
 
 load_dotenv()
+
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
+ALERT_PATH = os.getenv("ALERT_PATH")
+WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
+MAX_MSG_LENGTH = 4095
 logger = setup_logger(__name__)
 
 # Rate-limiter: до 10 вызовов / минуту
@@ -29,6 +41,7 @@ limiter = Limiter(key_func=get_remote_address)
 # Передаём SlowAPIMiddleware через класс Middleware
 middleware = [Middleware(SlowAPIMiddleware)]
 app = FastAPI(
+    lifespan=lifespan,
     middleware=middleware,
     docs_url=None,
     redoc_url=None,
@@ -36,7 +49,11 @@ app = FastAPI(
 )
 app.state.limiter = limiter  # ignore
 
+
 app.mount("/alert", alert_app)
+
+# Инициализируем сервис с торговой логикой
+trade_service = TradeService()
 
 
 @app.exception_handler(RequestValidationError)
@@ -71,15 +88,21 @@ async def global_exception_handler(request: Request, exc: Exception):
     # Полный traceback
     tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     lines = tb.splitlines()
-    short_tb = "\n".join(lines[:30])  # первые 30 строк
-
-    # Краткое сообщение для телеги
-    error_message = (
-        f"🚨 <b>UNHANDLED ERROR</b>\n"
-        f"🔗 <b>URL:</b> {request.url}\n\n"
-        f"<pre>{short_tb}</pre>"
-    )
-
+    short_tb = "\n".join(lines[:15])  # первые 15 строк
+    if len(short_tb) < MAX_MSG_LENGTH:
+        # Краткое сообщение для телеги
+        error_message = (
+            f"🚨 <b>UNHANDLED ERROR</b>\n"
+            f"🔗 <b>URL:</b> {request.url}\n\n"
+            f"<pre>{short_tb}</pre>"
+        )
+    else:
+        short_tb = short_tb[:10]
+        error_message = (
+            f"🚨 <b>UNHANDLED ERROR</b>\n"
+            f"🔗 <b>URL:</b> {request.url}\n\n"
+            f"<pre>{short_tb}</pre>"
+        )
     # Лог в файл
     logger.critical(
         "🔥 Unhandled exception at %s\n%s",
@@ -100,14 +123,14 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 @app.middleware("http")
-async def only_webhook_middleware(request: Request, call_next):
-    allowed_paths = {"/trading_webhook", "/alert/alert-critical"}
+async def only_webhook_middleware(
+    request: Request,
+    call_next,
+):
+    allowed_paths = {WEBHOOK_PATH, ALERT_PATH}
     if request.url.path not in allowed_paths:
         return Response(status_code=404)
     return await call_next(request)
-
-
-bot = Bot()
 
 
 @app.post("/trading_webhook")
@@ -147,7 +170,7 @@ async def handle_webhook(
     symbol = normalize_symbol(signal.symbol)
 
     # Выполняем ордер: получим order_id или None
-    order_id = bot.execute_trade(
+    order_id = trade_service.execute_trade(
         symbol=symbol,
         side=signal.side,
         qty=signal.qty,
@@ -156,7 +179,7 @@ async def handle_webhook(
     if order_id:
         # Фоновая задача будет ждать исполнения и ставить SL
         background_tasks.add_task(
-            bot.wait_for_fill_and_set_sl,
+            trade_service.wait_for_fill_and_set_sl,
             order_id=order_id,
             symbol=signal.symbol,
             side=signal.side,
