@@ -1,4 +1,5 @@
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta
 import logging
 from logging.handlers import RotatingFileHandler
 import os
@@ -10,26 +11,49 @@ BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 
-def delete_old_logs(log_dir: str):
-    for file in os.listdir(log_dir):
-        if file.endswith(".log"):
-            os.remove(os.path.join(log_dir, file))
+def delete_old_logs(
+    log_dir: str,
+    days: int,
+):
+    """
+    Удаляет все .log-файлы в папке log_dir старше `days` дней.
+    """
+    if not os.path.isdir(log_dir):
+        return
+
+    cutoff = datetime.now() - timedelta(days=days)
+    for filename in os.listdir(log_dir):
+        if not filename.endswith(".log"):
+            continue
+
+        file_path = os.path.join(log_dir, filename)
+        try:
+            mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
+            if mtime < cutoff:
+                os.remove(file_path)
+        except Exception:
+            # На всякий случай игнорируем ошибки доступа
+            pass
 
 
 def setup_logger(module_name: str) -> logging.Logger:
+    """
+    Создаёт логгер для модуля module_name.
+    Не удаляет старые файлы — этим занимается отдельная задача.
+    """
     logger = logging.getLogger(module_name)
     logger.setLevel(logging.DEBUG)
 
+    # Имя файла: <название_модуля>_YYYY-MM-DD.log
     today_str = datetime.now().strftime("%Y-%m-%d")
-    log_filename = (
-        f"{os.path.splitext(os.path.basename(module_name))[0]}_{today_str}.log"
-    )
+    module_base = os.path.splitext(os.path.basename(module_name))[0]
+    log_filename = f"{module_base}_{today_str}.log"
     log_path = os.path.join(LOG_DIR, log_filename)
 
     if not logger.handlers:
         os.makedirs(LOG_DIR, exist_ok=True)
-        delete_old_logs(LOG_DIR)
 
+        # Файловый обработчик (rotating по 100 KB, 1 backup)
         file_handler = RotatingFileHandler(
             log_path,
             maxBytes=100_000,
@@ -43,6 +67,7 @@ def setup_logger(module_name: str) -> logging.Logger:
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
 
+        # Консольный обработчик
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.INFO)
         console_formatter = logging.Formatter("%(asctime)s - %(message)s")
@@ -50,3 +75,24 @@ def setup_logger(module_name: str) -> logging.Logger:
         logger.addHandler(console_handler)
 
     return logger
+
+
+async def log_cleanup_loop(days: int = 1):
+    """
+    Фоновая корутина, которая при старте сразу очищает старые логи,
+    затем ждет 24 часа и повторяет.
+    """
+    while True:
+        try:
+            delete_old_logs(LOG_DIR, days)
+            logging.getLogger(__name__).info(
+                f"Deleted .log files older than {days} day(s)."
+            )
+        except Exception as e:
+            logging.getLogger(__name__).error(
+                "Error during log cleanup: %s",
+                e,
+            )
+
+        # Засыпаем ровно на 24 часа
+        await asyncio.sleep(24 * 60 * 60)
