@@ -11,6 +11,7 @@ async def lifespan(app: FastAPI):
     Внутри запускаем фоновый таск log_cleanup_loop и отменяем его при shutdown.
     """
     cleanup_task = asyncio.create_task(log_cleanup_loop())
+
     yield
     cleanup_task.cancel()
     try:
