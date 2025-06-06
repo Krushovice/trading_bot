@@ -13,7 +13,7 @@ logger = setup_logger(__name__)
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST_URL")
 BOT_PREFIX = os.getenv("BOT_PREFIX")
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+HOOK_SECRET = os.getenv("HOOK_SECRET")
 
 
 @asynccontextmanager
@@ -24,11 +24,14 @@ async def lifespan(app: FastAPI):
     Устанавливаем webhook дял бота и удаляем его при shutdown
     """
 
-    full_path = f"{BOT_PREFIX}{WEBHOOK_PATH}/{BOT_TOKEN}"
+    full_path = f"{BOT_PREFIX}{WEBHOOK_PATH}"
     webhook_url = WEBHOOK_HOST.rstrip("/") + full_path
 
     try:
-        result = await bot.set_webhook(webhook_url)
+        result = await bot.set_webhook(
+            url=webhook_url,
+            secret_token=HOOK_SECRET,
+        )
         logger.info(f"set_webhook response: {result}")
     except Exception as e:
         logger.error(f"Failed to set webhook to {webhook_url}: {e}")
