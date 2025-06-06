@@ -32,7 +32,10 @@ load_dotenv()
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
 ALERT_PATH = os.getenv("ALERT_PATH")
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
+TRADE_PATH = os.getenv("TRADE_PATH")
 MAX_MSG_LENGTH = 4095
+
+
 logger = setup_logger(__name__)
 
 # Rate-limiter: до 10 вызовов / минуту
@@ -127,13 +130,13 @@ async def only_webhook_middleware(
     request: Request,
     call_next,
 ):
-    allowed_paths = {WEBHOOK_PATH, ALERT_PATH}
+    allowed_paths = {TRADE_PATH, WEBHOOK_PATH, ALERT_PATH}
     if request.url.path not in allowed_paths:
         return Response(status_code=404)
     return await call_next(request)
 
 
-@app.post("/trading_webhook")
+@app.post(TRADE_PATH)
 @limiter.limit("10/minute")
 async def handle_webhook(
     request: Request,
