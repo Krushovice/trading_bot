@@ -54,7 +54,7 @@ async def root():
     return {"message": "FastAPI + Aiogram (webhook) запущены"}
 
 
-@bot_app.post(f"{BOT_PREFIX}{WEBHOOK_PATH}")
+@bot_app.post(WEBHOOK_PATH)
 async def telegram_webhook(
     request: Request,
     x_telegram_bot_api_secret_token: str = Header(None),
