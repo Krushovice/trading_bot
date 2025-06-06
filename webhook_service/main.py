@@ -4,7 +4,6 @@ import traceback
 
 from fastapi import (
     BackgroundTasks,
-    FastAPI,
     HTTPException,
     Request,
     Response,
@@ -17,44 +16,35 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-from alarm_bot.bot import bot_app
 from trade_service.schemas import TradingViewSignal
 from trade_service.trade_logic import TradeService
 from utils import normalize_symbol, setup_logger
 from webhook_service.app_utils import alert_telegram_admins
 
-from .lifespan import lifespan
+from .setup_app import setup_app
 
 
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
 ALERT_PATH = os.getenv("ALERT_PATH")
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-BOT_PREFIX = os.getenv("BOT_PREFIX")
 TRADE_PATH = os.getenv("TRADE_PATH")
-
+BOT_PREFIX = os.getenv("BOT_PREFIX")
 
 MAX_MSG_LENGTH = 4095
 
 
 logger = setup_logger(__name__)
 
+# Передаём SlowAPIMiddleware через класс Middleware
+middleware = [Middleware(SlowAPIMiddleware)]
+
+app = setup_app(middleware=middleware)
+
 # Rate-limiter: до 10 вызовов / минуту
 limiter = Limiter(key_func=get_remote_address)
 
-# Передаём SlowAPIMiddleware через класс Middleware
-middleware = [Middleware(SlowAPIMiddleware)]
-app = FastAPI(
-    lifespan=lifespan,
-    middleware=middleware,
-    docs_url=None,
-    redoc_url=None,
-    openapi_url=None,
-)
-app.state.limiter = limiter  # ignore
-
-
-app.mount(BOT_PREFIX, bot_app)
+app.state.limiter = limiter  # type: ignore[attr-defined]
 
 # Инициализируем сервис с торговой логикой
 trade_service = TradeService()
@@ -141,7 +131,7 @@ async def only_webhook_middleware(
 
 
 @app.post(TRADE_PATH)
-@limiter.limit("10/minute")
+@app.state.limiter("10/minute")
 async def handle_webhook(
     request: Request,
     signal: TradingViewSignal,
