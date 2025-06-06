@@ -1,39 +1,88 @@
+from contextlib import asynccontextmanager
 from datetime import datetime
 import os
 from pathlib import Path
+import traceback
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.exceptions import AiogramError
 from aiogram.filters import CommandStart
 from aiogram.types import (
     CallbackQuery,
     FSInputFile,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
     Message,
+    Update,
 )
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from utils.logger import setup_logger
+
+from .instruments import check_for_admin
+from .keyboards import get_logs_kb
 
 
 logger = setup_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
+
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST_URL")
 
 dp = Dispatcher()
 
 bot = Bot(
-    token=os.getenv(
-        "BOT_TOKEN",
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    token=BOT_TOKEN,
+    default=DefaultBotProperties(
+        parse_mode=ParseMode.HTML,
     ),
 )
-alert_app = FastAPI()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Устанавливаем webhook дял бота
+    webhook_path = f"/webhook/{BOT_TOKEN}"
+    webhook_url = WEBHOOK_HOST.rstrip("/") + webhook_path
+    try:
+        await bot.set_webhook(webhook_url)
+        logger.info(f"Webhook установлен: {webhook_url}")
+    except Exception as e:
+        logger.error("Не удалось установить webhook: %s", e)
+    yield
+
+    # При остановке alert_app очищаем webhook
+    try:
+        await bot.delete_webhook()
+        logger.info("Bot webhook удалён")
+    except Exception:
+        pass
+
+
+alert_app = FastAPI(lifespan=lifespan)
+
+
+@alert_app.get("/")
+async def root():
+    return {"message": "FastAPI + Aiogram (webhook) запущены"}
+
+
+@alert_app.post(f"/webhook/{BOT_TOKEN}")
+async def telegram_webhook(request: Request):
+    data = await request.json()
+    update = Update(**data)
+    try:
+        await dp.feed_update(
+            bot=bot,
+            update=update,
+        )
+    except Exception:
+        tb = traceback.format_exc()
+        logger.error("Ошибка обработки Telegram Update:\n%s", tb)
+    return JSONResponse({"ok": True})
 
 
 @alert_app.post("/alert-critical")
@@ -56,37 +105,6 @@ async def alert_critical(request: Request):
     )
 
     return {"status": "ok"}
-
-
-def get_logs_kb() -> InlineKeyboardMarkup:
-    button = InlineKeyboardButton(
-        text=f"👀Логи за {datetime.now().date()}",
-        callback_data="show_logs",
-    )
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[button]])
-
-    return keyboard
-
-
-def root_kb() -> InlineKeyboardMarkup:
-    button = InlineKeyboardButton(
-        text="🔙На главную",
-        callback_data="back",
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[button]])
-
-    return keyboard
-
-
-def load_logs():
-    pass
-
-
-def check_for_admin(tg_id: int) -> bool:
-    if tg_id == ADMIN_ID:
-        return True
-    return False
 
 
 @dp.message(CommandStart())
@@ -119,13 +137,3 @@ async def handle_back_button(call: CallbackQuery) -> None:
         text="Hello, Krushovice!",
         reply_markup=get_logs_kb(),
     )
-
-
-async def main() -> None:
-    try:
-        await dp.start_polling(bot)
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by admin")
-
-    except AiogramError as error:
-        logger.critical(error)
