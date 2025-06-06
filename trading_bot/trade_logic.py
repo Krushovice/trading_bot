@@ -9,7 +9,7 @@ from .bybit import Bybit
 logger = setup_logger(__name__)
 
 
-class Bot(Bybit):
+class TradeService(Bybit):
     def __init__(self):
         super().__init__()
         # Вся логика торговых решений уже в стратегии TradingView,

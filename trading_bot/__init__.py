@@ -1,6 +1,6 @@
 __all__ = (
-    "Bot",
     "Bybit",
+    "TradeService",
     "setup_logger",
 )
 
@@ -8,4 +8,4 @@ __all__ = (
 from utils.logger import setup_logger
 
 from .bybit import Bybit
-from .trade_logic import Bot
+from .trade_logic import TradeService
