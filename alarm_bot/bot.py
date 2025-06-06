@@ -31,6 +31,10 @@ ADMIN_ID = int(os.getenv("ADMIN_ID"))
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST_URL")
+WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
+BOT_PREFIX = os.getenv("BOT_PREFIX")
+ALERT_PATH = os.getenv("ALERT_PATH")
+
 
 dp = Dispatcher()
 
@@ -45,8 +49,9 @@ bot = Bot(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Устанавливаем webhook дял бота
-    webhook_path = f"/webhook/{BOT_TOKEN}"
-    webhook_url = WEBHOOK_HOST.rstrip("/") + webhook_path
+    full_path = f"{BOT_PREFIX}{WEBHOOK_PATH}/{BOT_TOKEN}"
+    webhook_url = WEBHOOK_HOST.rstrip("/") + full_path
+
     try:
         result = await bot.set_webhook(webhook_url)
         logger.info(f"set_webhook response: {result}")
@@ -62,15 +67,18 @@ async def lifespan(app: FastAPI):
         pass
 
 
-alert_app = FastAPI(lifespan=lifespan)
+bot_app = FastAPI(
+    lifespan=lifespan,
+    prefix=os.getenv("BOT_PREFIX"),
+)
 
 
-@alert_app.get("/")
+@bot_app.get("")
 async def root():
     return {"message": "FastAPI + Aiogram (webhook) запущены"}
 
 
-@alert_app.post(f"/webhook/{BOT_TOKEN}")
+@bot_app.post(f"{WEBHOOK_PATH}/{BOT_TOKEN}")
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = Update(**data)
@@ -81,15 +89,21 @@ async def telegram_webhook(request: Request):
         )
     except Exception:
         tb = traceback.format_exc()
-        logger.error("Ошибка обработки Telegram Update:\n%s", tb)
+        logger.error(
+            "Ошибка обработки Telegram Update:\n%s",
+            tb,
+        )
     return JSONResponse({"ok": True})
 
 
-@alert_app.post("/alert-critical")
+@bot_app.post(ALERT_PATH)
 async def alert_critical(request: Request):
     data = await request.json()
     if data.get("key") != SECRET_KEY:
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden",
+        )
 
     error_text = data.get("error")
     if not error_text:

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import os
 import traceback
 
-from alarm_bot.bot import alert_app
+from alarm_bot.bot import bot_app
 from dotenv import load_dotenv
 from fastapi import (
     BackgroundTasks,
@@ -32,7 +32,11 @@ load_dotenv()
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
 ALERT_PATH = os.getenv("ALERT_PATH")
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_PREFIX = os.getenv("BOT_PREFIX")
 TRADE_PATH = os.getenv("TRADE_PATH")
+
+
 MAX_MSG_LENGTH = 4095
 
 
@@ -53,7 +57,7 @@ app = FastAPI(
 app.state.limiter = limiter  # ignore
 
 
-app.mount("/alert", alert_app)
+app.mount(BOT_PREFIX, bot_app)
 
 # Инициализируем сервис с торговой логикой
 trade_service = TradeService()
@@ -130,7 +134,10 @@ async def only_webhook_middleware(
     request: Request,
     call_next,
 ):
-    allowed_paths = {TRADE_PATH, WEBHOOK_PATH, ALERT_PATH}
+    bot_webhook_path = f"{BOT_PREFIX}{WEBHOOK_PATH}/{BOT_TOKEN}"
+    alert_path = f"{BOT_PREFIX}{ALERT_PATH}"
+    allowed_paths = {TRADE_PATH, bot_webhook_path, alert_path}
+
     if request.url.path not in allowed_paths:
         return Response(status_code=404)
     return await call_next(request)
