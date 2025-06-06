@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
         result = await bot.set_webhook(
             url=webhook_url,
             secret_token=HOOK_SECRET,
+            drop_pending_updates=True,
         )
         logger.info(f"set_webhook response: {result}")
     except Exception as e:
