@@ -2,8 +2,6 @@ from datetime import datetime, timezone
 import os
 import traceback
 
-from alarm_bot.bot import bot_app
-from dotenv import load_dotenv
 from fastapi import (
     BackgroundTasks,
     FastAPI,
@@ -18,16 +16,15 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
+
+from alarm_bot.bot import bot_app
 from trade_service.schemas import TradingViewSignal
 from trade_service.trade_logic import TradeService
-
 from utils import normalize_symbol, setup_logger
 from webhook_service.app_utils import alert_telegram_admins
 
 from .lifespan import lifespan
 
-
-load_dotenv()
 
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
 ALERT_PATH = os.getenv("ALERT_PATH")
