@@ -4,7 +4,7 @@ import random
 from pydantic import ValidationError
 import pytest
 
-from trading_bot.schemas import TradingViewSignal
+from trade_service.schemas import TradingViewSignal
 
 
 @pytest.mark.parametrize(

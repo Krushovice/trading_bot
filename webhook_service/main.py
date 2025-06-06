@@ -18,9 +18,9 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
+from trade_service.schemas import TradingViewSignal
+from trade_service.trade_logic import TradeService
 
-from trading_bot.schemas import TradingViewSignal
-from trading_bot.trade_logic import TradeService
 from utils import normalize_symbol, setup_logger
 from webhook_service.app_utils import alert_telegram_admins
 

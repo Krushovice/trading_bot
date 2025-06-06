@@ -1,6 +1,6 @@
 import pytest
 
-from trading_bot import Bybit
+from trade_service import Bybit
 
 
 class DummyClient:

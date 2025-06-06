@@ -3,8 +3,7 @@ import os
 
 from fastapi import HTTPException
 import httpx
-
-from trading_bot.schemas import TradingViewSignal
+from trade_service.schemas import TradingViewSignal
 
 
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
