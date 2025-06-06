@@ -1,4 +1,3 @@
-from contextlib import asynccontextmanager
 from datetime import datetime
 import os
 from pathlib import Path
@@ -45,30 +44,7 @@ bot = Bot(
     ),
 )
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Устанавливаем webhook дял бота
-    full_path = f"{BOT_PREFIX}{WEBHOOK_PATH}/{BOT_TOKEN}"
-    webhook_url = WEBHOOK_HOST.rstrip("/") + full_path
-
-    try:
-        result = await bot.set_webhook(webhook_url)
-        logger.info(f"set_webhook response: {result}")
-    except Exception as e:
-        logger.error(f"Failed to set webhook to {webhook_url}: {e}")
-    yield
-
-    # При остановке alert_app очищаем webhook
-    try:
-        await bot.delete_webhook()
-        logger.info("Bot webhook удалён")
-    except Exception:
-        pass
-
-
 bot_app = FastAPI(
-    lifespan=lifespan,
     prefix=os.getenv("BOT_PREFIX"),
 )
 
