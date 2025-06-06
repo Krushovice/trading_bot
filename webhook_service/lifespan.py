@@ -1,15 +1,11 @@
 import asyncio
 from contextlib import asynccontextmanager
 import os
-from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 
+from alarm_bot.bot import bot
 from utils.logger import log_cleanup_loop, setup_logger
-
-
-if TYPE_CHECKING:
-    from alarm_bot.bot import bot
 
 
 logger = setup_logger(__name__)
