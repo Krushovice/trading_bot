@@ -1,4 +1,3 @@
-import asyncio
 import os
 from pathlib import Path
 import traceback
@@ -118,7 +117,6 @@ async def command_start_handler(message: Message) -> None:
 @dp.callback_query(F.data == "show_logs")
 async def handle_show_logs(call: CallbackQuery):
     await call.answer()
-
     logs_path = os.path.join(BASE_DIR, "logs")
     logs = os.listdir(logs_path)
 
@@ -141,11 +139,3 @@ async def handle_back_button(call: CallbackQuery) -> None:
         text="Hello, Krushovice!",
         reply_markup=get_logs_kb(),
     )
-
-
-async def main():
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
