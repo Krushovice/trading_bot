@@ -37,7 +37,7 @@ ALERT_PATH = os.getenv("ALERT_PATH")
 dp = Dispatcher()
 
 bot = Bot(
-    token="7945158776:AAF9KOuwtqrFayBaXVuHcEUs7QdUaxZ_0sw",
+    token=BOT_TOKEN,
     default=DefaultBotProperties(
         parse_mode=ParseMode.HTML,
     ),
@@ -124,7 +124,7 @@ async def handle_show_logs(call: CallbackQuery):
 
     if os.path.exists(logs_path) and len(logs) > 0:
         for log in logs:
-            if not os.path.getsize(f"{logs_path}/{log}") == 0:
+            if os.path.getsize(f"{logs_path}/{log}") > 0:
                 await call.message.answer_document(
                     FSInputFile(
                         path=f"{logs_path}/{log}",
