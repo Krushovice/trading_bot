@@ -20,7 +20,6 @@ class TradeService(Bybit):
         side: str,
         qty: float,
         price: float,
-        base_price: float,
     ) -> Optional[tuple[float, float, float]]:
         """
         1) Запрашиваем фильтры инструмента (min_qty, tick_size, qty_step).
@@ -135,8 +134,6 @@ class TradeService(Bybit):
 
         # Передаём в фоновую задачу: symbol, side, entry_price=price_aligned, tick_size
         return order_id
-
-    import time
 
     def wait_for_fill_and_set_sl(
         self,
