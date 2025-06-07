@@ -1,4 +1,4 @@
-from datetime import datetime
+import asyncio
 import os
 from pathlib import Path
 import traceback
@@ -16,15 +16,14 @@ from aiogram.types import (
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from alarm_bot.instruments import check_for_admin
+from alarm_bot.keyboards import get_logs_kb
 from utils.logger import setup_logger
-
-from .instruments import check_for_admin
-from .keyboards import get_logs_kb
 
 
 logger = setup_logger(__name__)
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 SECRET_KEY = os.getenv("MY_SECRET_KEY")
@@ -38,7 +37,7 @@ ALERT_PATH = os.getenv("ALERT_PATH")
 dp = Dispatcher()
 
 bot = Bot(
-    token=BOT_TOKEN,
+    token="7945158776:AAF9KOuwtqrFayBaXVuHcEUs7QdUaxZ_0sw",
     default=DefaultBotProperties(
         parse_mode=ParseMode.HTML,
     ),
@@ -120,11 +119,17 @@ async def command_start_handler(message: Message) -> None:
 async def handle_show_logs(call: CallbackQuery):
     await call.answer()
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    log_path = os.path.join(BASE_DIR, "logs", f"bot_{today}.log")
+    logs_path = os.path.join(BASE_DIR, "logs")
+    logs = os.listdir(logs_path)
 
-    if os.path.exists(log_path):
-        await call.message.answer_document(FSInputFile(log_path))
+    if os.path.exists(logs_path) and len(logs) > 0:
+        for log in logs:
+            if not os.path.getsize(f"{logs_path}/{log}") == 0:
+                await call.message.answer_document(
+                    FSInputFile(
+                        path=f"{logs_path}/{log}",
+                    )
+                )
     else:
         await call.message.answer("Логи за сегодня не найдены.")
 
@@ -136,3 +141,11 @@ async def handle_back_button(call: CallbackQuery) -> None:
         text="Hello, Krushovice!",
         reply_markup=get_logs_kb(),
     )
+
+
+async def main():
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
