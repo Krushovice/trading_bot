@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from alarm_bot.instruments import check_for_admin
 from alarm_bot.keyboards import get_logs_kb
+from core.config import settings
 from utils.logger import setup_logger
 
 
@@ -24,26 +25,17 @@ logger = setup_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
-SECRET_KEY = os.getenv("MY_SECRET_KEY")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-BOT_PREFIX = os.getenv("BOT_PREFIX")
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST_URL")
-WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
-ALERT_PATH = os.getenv("ALERT_PATH")
-
-
 dp = Dispatcher()
 
 bot = Bot(
-    token=BOT_TOKEN,
+    token=settings.bot.token,
     default=DefaultBotProperties(
         parse_mode=ParseMode.HTML,
     ),
 )
 
 bot_app = FastAPI(
-    prefix=BOT_PREFIX,
+    prefix=settings.api_prefix.bot,
 )
 
 
@@ -52,13 +44,13 @@ async def root():
     return {"message": "FastAPI + Aiogram (webhook) запущены"}
 
 
-@bot_app.post(WEBHOOK_PATH)
+@bot_app.post(settings.api_prefix.bot_webhook_path)
 async def telegram_webhook(
     request: Request,
     x_telegram_bot_api_secret_token: str = Header(None),
 ):
     # Проверяем, что переданный X-Telegram-Bot-Api-Secret-Token совпадает с HOOK_SECRET
-    if x_telegram_bot_api_secret_token != os.getenv("HOOK_SECRET"):
+    if x_telegram_bot_api_secret_token != settings.bot.secret:
         raise HTTPException(
             status_code=403,
             detail="Forbidden",
@@ -79,10 +71,10 @@ async def telegram_webhook(
     return JSONResponse({"ok": True})
 
 
-@bot_app.post(ALERT_PATH)
+@bot_app.post(settings.api_prefix.bot_alert_path)
 async def alert_critical(request: Request):
     data = await request.json()
-    if data.get("key") != SECRET_KEY:
+    if data.get("key") != settings.trade_config.secret_key:
         raise HTTPException(
             status_code=403,
             detail="Forbidden",
@@ -96,7 +88,7 @@ async def alert_critical(request: Request):
         )
 
     await bot.send_message(
-        chat_id=ADMIN_ID,
+        chat_id=settings.bot.admin,
         text=f"🚨 <b>Критическая ошибка в FastAPI:</b>\n<pre>{error_text}</pre>",
         parse_mode="HTML",
     )
