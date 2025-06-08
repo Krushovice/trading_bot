@@ -109,7 +109,8 @@ class TradeService(Bybit):
         current_price = self.get_last_price(symbol=symbol)
         if current_price is None:
             logger.error(
-                "Не удалось получить текущую цену для %s, прерываем trade", symbol
+                "Не удалось получить текущую цену для %s, прерываем trade",
+                symbol,
             )
             return None
         aligned = self._align_order(

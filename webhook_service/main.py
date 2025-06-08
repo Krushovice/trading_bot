@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-import os
 import traceback
 
 from fastapi import (
@@ -16,6 +15,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
+from core.config import settings
 from trade_service.schemas import TradingViewSignal
 from trade_service.trade_logic import TradeService
 from utils import normalize_symbol, setup_logger
@@ -23,12 +23,6 @@ from webhook_service.app_utils import alert_telegram_admins
 
 from .setup_app import setup_app
 
-
-SECRET_KEY = os.getenv("MY_SECRET_KEY")
-ALERT_PATH = os.getenv("ALERT_PATH")
-WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
-TRADE_PATH = os.getenv("TRADE_PATH")
-BOT_PREFIX = os.getenv("BOT_PREFIX")
 
 MAX_MSG_LENGTH = 4095
 
@@ -77,9 +71,18 @@ async def rate_limit_handler(
 
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
+async def global_exception_handler(
+    request: Request,
+    exc: Exception,
+):
     # Полный traceback
-    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    tb = "".join(
+        traceback.format_exception(
+            type(exc),
+            exc,
+            exc.__traceback__,
+        )
+    )
     lines = tb.splitlines()
     short_tb = "\n".join(lines[:15])  # первые 15 строк
     if len(short_tb) < MAX_MSG_LENGTH:
@@ -107,7 +110,10 @@ async def global_exception_handler(request: Request, exc: Exception):
     try:
         await alert_telegram_admins(error_message)
     except Exception as e:
-        logger.error("⚠️ Failed to alert Telegram: %s", e)
+        logger.error(
+            "⚠️ Failed to alert Telegram: %s",
+            e,
+        )
 
     return JSONResponse(
         status_code=500,
@@ -120,16 +126,20 @@ async def only_webhook_middleware(
     request: Request,
     call_next,
 ):
-    bot_webhook_path = f"{BOT_PREFIX}{WEBHOOK_PATH}"
-    alert_path = f"{BOT_PREFIX}{ALERT_PATH}"
-    allowed_paths = {TRADE_PATH, bot_webhook_path, alert_path}
+    bot_webhook_path = settings.api_prefix.bot_webhook_path
+    alert_path = settings.api_prefix.bot_alert_path
+    allowed_paths = {
+        settings.api_prefix.app.trade_webhook,
+        bot_webhook_path,
+        alert_path,
+    }
 
     if request.url.path not in allowed_paths:
         return Response(status_code=404)
     return await call_next(request)
 
 
-@app.post(TRADE_PATH)
+@app.post(settings.api_prefix.app.trade_webhook)
 @limiter.limit("10/minute")
 async def handle_webhook(
     request: Request,
@@ -137,7 +147,7 @@ async def handle_webhook(
     background_tasks: BackgroundTasks,
 ):
     # Проверка секрета из TradingView
-    if signal.secret != SECRET_KEY:
+    if signal.secret != settings.trade_config.secret:
         raise HTTPException(
             status_code=401,
             detail="Invalid secret",
