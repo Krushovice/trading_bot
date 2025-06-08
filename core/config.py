@@ -14,7 +14,7 @@ class RunConfig(BaseModel):
     port: int = 8000
 
 
-class BOTConfig(BaseModel):
+class BotConfig(BaseModel):
     token: str
     secret: str
     admin: int
@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     bybit_api: BybitApiConfig
     trade_config: TradeConfig
     api_prefix: ApiPrefix = ApiPrefix()
+    bot: BotConfig
 
 
 settings = Settings()
