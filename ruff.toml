@@ -104,6 +104,7 @@ known-first-party = [
     "webhook_service",
     "alarm_bot",
     "utils",
+    "core",
 ]
 
 force-sort-within-sections = true
@@ -112,6 +113,7 @@ lines-after-imports = 2
 
 known-third-party = [
     "pydantic",
+    "pydantic_settings",
     "fastapi",
     "pybit",
     "slowapi",
