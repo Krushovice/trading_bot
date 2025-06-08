@@ -1,8 +1,8 @@
 from typing import Optional, Tuple
 
-from core.config import settings
 from pybit.unified_trading import HTTP
 
+from core.config import settings
 from utils import align_to_step, setup_logger
 
 
@@ -29,7 +29,8 @@ class Bybit:
             timeout=30,
             testnet=use_testnet,
         )
-        # fmt: off
+
+    # fmt: on
 
     def get_instruments_info(
         self,

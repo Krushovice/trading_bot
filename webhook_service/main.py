@@ -187,7 +187,7 @@ async def handle_webhook(
         background_tasks.add_task(
             trade_service.wait_for_fill_and_set_sl,
             order_id=order_id,
-            symbol=signal.symbol,
+            symbol=symbol,
             side=signal.side,
         )
 
