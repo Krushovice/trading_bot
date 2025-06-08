@@ -1,6 +1,6 @@
-import os
 from typing import Optional, Tuple
 
+from core.config import settings
 from pybit.unified_trading import HTTP
 
 from utils import align_to_step, setup_logger
@@ -13,17 +13,23 @@ class Bybit:
     def __init__(self, use_testnet: bool = False):
         logger.info("Bybit: авторизация выполнена")
         self.category = "linear"
-        # Процент стоп-лосса (можно менять через ENV)
-        self.stop_loss_pct = float(os.getenv("STOP_LOSS_PCT", "3.0"))  # 3%
-
+        self.stop_loss_pct = float(settings.bybit_api.sl_pct)
+        # fmt: off
         self.client = HTTP(
-            api_key=os.getenv("TEST_API_KEY") if use_testnet else os.getenv("API_KEY"),
+            api_key=(
+                settings.bybit_api.test_key
+                if use_testnet
+                else settings.bybit_api.key
+            ),
             api_secret=(
-                os.getenv("TEST_API_SECRET") if use_testnet else os.getenv("API_SECRET")
+                settings.bybit_api.test_secret
+                if use_testnet
+                else settings.bybit_api.secret
             ),
             timeout=30,
             testnet=use_testnet,
         )
+        # fmt: off
 
     def get_instruments_info(
         self,
@@ -39,7 +45,8 @@ class Bybit:
         """
         try:
             resp = self.client.get_instruments_info(
-                symbol=symbol, category=self.category
+                symbol=symbol,
+                category=self.category,
             )
             if resp["retCode"] != 0 or not resp.get("result", {}).get("list"):
                 logger.error(
@@ -83,7 +90,10 @@ class Bybit:
                 symbol=symbol,
             )
             if resp["retCode"] != 0 or not resp.get("result", {}).get("list"):
-                logger.error("Bybit get_tickers error: %s", resp.get("retMsg"))
+                logger.error(
+                    "Bybit get_tickers error: %s",
+                    resp.get("retMsg"),
+                )
                 return None
             ticker = resp["result"]["list"][0]
             best_bid = float(ticker["bid1Price"])
@@ -130,7 +140,10 @@ class Bybit:
                 )
                 return order_id
             else:
-                logger.error("Bybit place_order error: %s", resp.get("retMsg"))
+                logger.error(
+                    "Bybit place_order error: %s",
+                    resp.get("retMsg"),
+                )
                 return None
 
         except Exception as e:
@@ -168,7 +181,10 @@ class Bybit:
             )
             return None
 
-    def get_last_price(self, symbol: str) -> float | None:
+    def get_last_price(
+        self,
+        symbol: str,
+    ) -> float | None:
         """
         Возвращает последнюю цену (LastPrice) для данного символа.
         Если что-то пошло не так, вернёт None.
@@ -179,12 +195,18 @@ class Bybit:
                 symbol=symbol,
             )
             if resp.get("retCode") != 0 or not resp.get("result", {}).get("list"):
-                logger.error("Bybit get_last_price error: %s", resp.get("retMsg"))
+                logger.error(
+                    "Bybit get_last_price error: %s",
+                    resp.get("retMsg"),
+                )
                 return None
             ticker = resp["result"]["list"][0]
             return float(ticker["lastPrice"])
         except Exception as e:
-            logger.error("Bybit get_last_price exception: %s", e)
+            logger.error(
+                "Bybit get_last_price exception: %s",
+                e,
+            )
             return None
 
     def set_stop_loss(
@@ -207,7 +229,10 @@ class Bybit:
 
         base_price = self.get_last_price(symbol)
         if base_price is None:
-            logger.error("Не удалось получить текущую цену для %s", symbol)
+            logger.error(
+                "Не удалось получить текущую цену для %s",
+                symbol,
+            )
             return
 
         if side.lower() == "buy":
@@ -248,9 +273,17 @@ class Bybit:
                 stopLossTriggerType="LastPrice",
             )
             if resp.get("retCode") == 0:
-                logger.info("SL установлен для %s: %s", symbol, aligned_sl)
+                logger.info(
+                    "SL установлен для %s: %s",
+                    symbol,
+                    aligned_sl,
+                )
             else:
                 logger.error("Bybit set_stop_loss error: %s", resp.get("retMsg"))
 
         except Exception as e:
-            logger.error("Bybit set_stop_loss exception: %s", e, exc_info=True)
+            logger.error(
+                "Bybit set_stop_loss exception: %s",
+                e,
+                exc_info=True,
+            )

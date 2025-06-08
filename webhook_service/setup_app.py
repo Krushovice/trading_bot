@@ -1,14 +1,10 @@
-import os
-
+from core.config import settings
 from fastapi import FastAPI
 from fastapi.middleware import Middleware
 
 from alarm_bot.bot import bot_app
 
 from .lifespan import lifespan
-
-
-BOT_PREFIX = os.getenv("BOT_PREFIX")
 
 
 def setup_app(
@@ -23,5 +19,8 @@ def setup_app(
     )
 
     # Подключаем bot_app
-    app.mount(BOT_PREFIX, bot_app)
+    app.mount(
+        settings.api_prefix.bot,
+        bot_app,
+    )
     return app
