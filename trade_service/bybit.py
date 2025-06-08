@@ -19,7 +19,7 @@ class Bybit:
         self.client = HTTP(
             api_key=os.getenv("TEST_API_KEY") if use_testnet else os.getenv("API_KEY"),
             api_secret=(
-                os.getenv("TEST_API_SECRET") if use_testnet else os.getenv("API_KEY")
+                os.getenv("TEST_API_SECRET") if use_testnet else os.getenv("API_SECRET")
             ),
             timeout=30,
             testnet=use_testnet,

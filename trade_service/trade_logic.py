@@ -132,7 +132,7 @@ class TradeService(Bybit):
         if not order_id:
             return None
 
-        # Передаём в фоновую задачу: symbol, side, entry_price=price_aligned, tick_size
+        # Передаём в фоновую задачу order_id
         return order_id
 
     def wait_for_fill_and_set_sl(
