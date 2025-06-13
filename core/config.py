@@ -43,7 +43,7 @@ class BybitApiConfig(BaseModel):
 class ApiPrefix(BaseModel):
     bot: str = "/bot"
     app: AppPath = AppPath()
-    trade: TradeConfig = TradeConfig()
+    trade: TradeConfig
 
     @property
     def bot_webhook_path(self) -> str:
