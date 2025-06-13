@@ -147,7 +147,7 @@ async def handle_webhook(
     background_tasks: BackgroundTasks,
 ):
     # Проверка секрета из TradingView
-    if signal.secret != settings.trade_config.secret:
+    if signal.secret != settings.trade_config.secret_key:
         raise HTTPException(
             status_code=401,
             detail="Invalid secret",

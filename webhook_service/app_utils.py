@@ -11,7 +11,7 @@ BOT_API_URL = f"{settings.trade_config.host_url}{settings.api_prefix.bot_alert_p
 
 
 async def validate_secret(signal: TradingViewSignal) -> None:
-    if signal.secret != settings.trade_config.secret:
+    if signal.secret != settings.trade_config.secret_key:
         raise HTTPException(
             status_code=403,
             detail="Forbidden: Invalid secret",
