@@ -1,19 +1,14 @@
 import asyncio
 from contextlib import asynccontextmanager
-import os
 
 from fastapi import FastAPI
 
 from alarm_bot.bot import bot
+from core.config import settings
 from utils.logger import log_cleanup_loop, setup_logger
 
 
 logger = setup_logger(__name__)
-
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST_URL")
-BOT_PREFIX = os.getenv("BOT_PREFIX")
-WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
-HOOK_SECRET = os.getenv("HOOK_SECRET")
 
 
 @asynccontextmanager
@@ -24,13 +19,12 @@ async def lifespan(app: FastAPI):
     Устанавливаем webhook дял бота и удаляем его при shutdown
     """
 
-    full_path = f"{BOT_PREFIX}{WEBHOOK_PATH}"
-    webhook_url = WEBHOOK_HOST.rstrip("/") + full_path
+    webhook_url = settings.api_prefix.bot_webhook_url
 
     try:
         result = await bot.set_webhook(
             url=webhook_url,
-            secret_token=HOOK_SECRET,
+            secret_token=settings.bot.secret,
             drop_pending_updates=True,
         )
         logger.info(f"set_webhook response: {result}")
