@@ -1,58 +1,81 @@
 import pytest
 from aiogram import Bot
+from aiogram.types import Update
 
-from aiogram.types import Message, User, Chat, Update
-
-from alarm_bot.bot import dp, bot
+from alarm_bot import bot
 from alarm_bot.keyboards import get_logs_kb
-from core.config import settings
-
-admin_id = settings.bot.admin
 
 
-@pytest.mark.asyncio
-async def test_command_start_handler(monkeypatch):
-    # Создаём фейковое сообщение от ADMIN_ID
-    user = User(
-        id=admin_id,
-        is_bot=False,
-        first_name="Test",
-        username="test",
-    )
-    chat = Chat(id=admin_id, type="private")
-    message = Message(
-        message_id=1,
-        date=0,
-        text="/start",
-        from_user=user,
-        chat=chat,
-    )
+class TestBot:
+    @classmethod
+    @pytest.mark.asyncio
+    async def test_start_handler(cls, update, message):
+        # Словарь для проверки вызова
+        sent = {}
 
-    sent = {}
+        async def fake_call(self, method, *args, **kwargs):
+            if hasattr(method, "chat_id"):
+                sent["chat_id"] = method.chat_id
+                sent["text"] = method.text
+                sent["reply_markup"] = method.reply_markup
+            return method
 
-    # 2) Подменяем Bot.__call__, чтобы любые TelegramMethod не ушли в сеть,
-    #    а мы могли вытащить параметры из объекта метода.
-    sent = {}
+        # Переопределяем Bot.__call__ только для этого теста
+        Bot.__call__ = fake_call
 
-    async def fake_call(self, method, *args, **kwargs):
-        # здесь method — это экземпляр SendMessage, SendPhoto и т.д.
-        if hasattr(method, "chat_id"):
-            sent["chat_id"] = method.chat_id
-            sent["text"] = method.text
-            sent["reply_markup"] = getattr(method, "reply_markup", None)
-        # возвращаем тот же метод (или можно вернуть фейковый ответ)
-        return method
+        # Запускаем обработку
+        await bot.dp._process_update(bot=bot.bot, update=update)
 
-    monkeypatch.setattr(Bot, "__call__", fake_call)
+        # Проверяем результат
+        assert sent["chat_id"] == update.message.chat.id
+        assert "Hello, Krushovice" in sent["text"]
+        assert sent["reply_markup"] == get_logs_kb()
 
-    update = Update(update_id=1, message=message)
+    @classmethod
+    @pytest.mark.asyncio
+    async def test_logs_callback_handler(
+        cls,
+        tmp_path,
+        callback_query,
+        monkeypatch,
+    ):
+        # tmp_path это /tmp/pytest-of-<user>/pytest-<n>/test_handle_show_logs0
+        # 1) Создаём папку logs внутри tmp_path
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir()
+        # 2) Сюда кладём один лог-файл
+        log_file = logs_dir / "bot_2025-06-09.log"
+        log_file.write_text("some log content")
 
-    # 3) Прокидываем апдейт в диспетчер
-    # используем самый высокоуровневый entrypoint, чтобы __call__ отработал:
-    # feed_update НЕ вызывает __call__, а _process_update вызывает.
-    await dp._process_update(bot=bot, update=update)
+        # 3) Подменяем в коде константу BASE_DIR на наш tmp_path
+        monkeypatch.setattr(
+            "bot.BASE_DIR",
+            tmp_path,
+        )
 
-    # 4) Проверяем, что fake_call сработал
-    assert sent["chat_id"] == admin_id
-    assert "Hello, Krushovice" in sent["text"]
-    assert sent["reply_markup"] == get_logs_kb()
+        # 4) Мокаем отправку документов, как раньше
+        sent_docs = []
+
+        async def fake_answer_document(self, document, **kwargs):
+            sent_docs.append(document)
+
+        monkeypatch.setattr(
+            "bot.handle_show_logs.__globals__['FSInputFile']",
+            lambda path: path,  # если нужно просто вернуть путь
+        )
+        monkeypatch.setattr(
+            "bot.CallbackQuery.message.answer_document",
+            fake_answer_document,
+        )
+
+        # 5) Запускаем хэндлер через dp._process_update
+        await bot.dp._process_update(
+            bot=bot.bot,
+            update=Update(
+                update_id=1,
+                callback_query=callback_query,
+            ),
+        )
+
+        # 6) Проверяем, что отправилось именно наш файл
+        assert sent_docs == [str(log_file)]
