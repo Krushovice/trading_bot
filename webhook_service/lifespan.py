@@ -19,7 +19,9 @@ async def lifespan(app: FastAPI):
     Устанавливаем webhook дял бота и удаляем его при shutdown
     """
 
-    webhook_url = f"{settings.trade_config.host_url}{settings.bot_webhook_path}"
+    webhook_url = (
+        f"{settings.trade_config.host_url}{settings.api_prefix.bot_webhook_path}"
+    )
 
     try:
         result = await bot.set_webhook(
