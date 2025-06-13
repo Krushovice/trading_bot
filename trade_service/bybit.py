@@ -280,7 +280,10 @@ class Bybit:
                     aligned_sl,
                 )
             else:
-                logger.error("Bybit set_stop_loss error: %s", resp.get("retMsg"))
+                logger.error(
+                    "Bybit set_stop_loss error: %s",
+                    resp.get("retMsg"),
+                )
 
         except Exception as e:
             logger.error(
