@@ -1,18 +1,17 @@
 from datetime import datetime
-import os
 
 from fastapi import HTTPException
 import httpx
+
+from core.config import settings
 from trade_service.schemas import TradingViewSignal
 
 
-SECRET_KEY = os.getenv("MY_SECRET_KEY")
-BOT_API_URL = "http://127.0.0.1:8000/alert-critical"
-BOT_SECRET_KEY = os.getenv("BOT_TOKEN")
+BOT_API_URL = f"{settings.trade_config.host_url}{settings.api_prefix.bot_alert_path}"
 
 
 async def validate_secret(signal: TradingViewSignal) -> None:
-    if signal.secret != SECRET_KEY:
+    if signal.secret != settings.trade_config.secret:
         raise HTTPException(
             status_code=403,
             detail="Forbidden: Invalid secret",
@@ -41,7 +40,7 @@ class AlertThrottler:
                     BOT_API_URL,
                     json={
                         "error": error_html,
-                        "key": BOT_SECRET_KEY,
+                        "key": settings.bot.token,
                     },
                     timeout=5.0,
                 )
