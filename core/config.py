@@ -26,19 +26,6 @@ class AppPath(BaseModel):
     bot_alert: str = "/alert-critical"
 
 
-class ApiPrefix(BaseModel):
-    bot: str = "/bot"
-    app: AppPath = AppPath()
-
-    @property
-    def bot_webhook_path(self) -> str:
-        return f"{self.bot}{self.app.bot_webhook}"
-
-    @property
-    def bot_alert_path(self) -> str:
-        return f"{self.bot}{self.app.bot_alert}"
-
-
 class TradeConfig(BaseModel):
     host_url: str
     secret_key: str
@@ -51,6 +38,27 @@ class BybitApiConfig(BaseModel):
     test_secret: str
     sl_pct: float
     timeout: int = 30
+
+
+class ApiPrefix(BaseModel):
+    bot: str = "/bot"
+    app: AppPath = AppPath()
+    trade: TradeConfig = TradeConfig()
+
+    @property
+    def bot_webhook_path(self) -> str:
+        return f"{self.bot}{self.app.bot_webhook}"
+
+    @property
+    def bot_alert_path(self) -> str:
+        return f"{self.bot}{self.app.bot_alert}"
+
+    @property
+    def bot_webhook_url(self) -> str:
+        # host_url/bot/webhook
+        parts = (self.trade.host_url, self.bot, self.app.bot_webhook)
+        url = "".join(parts)
+        return url
 
 
 class Settings(BaseSettings):
