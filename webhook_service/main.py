@@ -183,12 +183,13 @@ async def handle_webhook(
     )
 
     if order_id:
-        # Фоновая задача будет ждать исполнения и ставить SL
-        background_tasks.add_task(
-            trade_service.wait_for_fill_and_set_sl,
-            order_id=order_id,
-            symbol=symbol,
-            side=signal.side,
-        )
+        pass
+        # background_tasks.add_task(
+        #     trade_service.wait_for_fill_and_set_sl,
+        #     order_id=order_id,
+        #     symbol=symbol,
+        #     side=signal.side,
+        # )
 
-    return {"status": "ok"}
+        return {"status": "ok"}
+    return {"status": "failed"}
